@@ -3,71 +3,126 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>비밀 아지트</title>
+  <title>알PDF</title>
+  <link rel="icon" id="favicon" href="data:," />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri/dist/galmuri.css" />
   <style>
     :root {
       --pink: #ff8fab;
+      --pink-d: #e0708f;
       --cream: #fff7ec;
       --ink: #4a3b5c;
-      --panel: rgba(255, 247, 236, 0.92);
+      --panel: rgba(255, 247, 236, 0.94);
       --font: 'Galmuri11', 'Malgun Gothic', sans-serif;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #2f6b3a; font-family: var(--font); color: var(--ink); }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #2f6b3a; font-family: var(--font); color: var(--ink); user-select: none; }
     canvas#game { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+    button { font: inherit; color: inherit; }
+    .hidden { display: none !important; }
+    img.ic { width: 32px; height: 32px; image-rendering: pixelated; display: block; }
+
+    .panel { position: fixed; background: var(--panel); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+    .btn {
+      border: 3px solid var(--ink); background: #fff; padding: 4px 10px; cursor: pointer; box-shadow: 2px 2px 0 var(--ink);
+    }
+    .btn:hover { background: #ffe3ea; }
+    .btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+    .btn.pink { background: var(--pink); color: #fff; text-shadow: 1px 1px 0 var(--ink); }
+    .btn:disabled { opacity: .45; cursor: default; }
 
     /* 입장 화면 */
-    #join {
-      position: fixed; inset: 0; display: grid; place-items: center;
-      background: rgba(47, 107, 58, 0.75); backdrop-filter: blur(3px); z-index: 10;
-    }
-    #join form {
-      background: var(--cream); border: 4px solid var(--ink); box-shadow: 6px 6px 0 var(--ink);
-      padding: 24px 28px; width: min(360px, calc(100vw - 32px)); display: grid; gap: 12px;
-    }
+    #join { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(47, 107, 58, 0.75); backdrop-filter: blur(3px); z-index: 30; }
+    #join form { background: var(--cream); border: 4px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); padding: 24px 28px; width: min(360px, calc(100vw - 32px)); display: grid; gap: 12px; }
     #join h1 { margin: 0; font-size: 22px; text-align: center; }
     #join p.sub { margin: 0; font-size: 12px; text-align: center; opacity: .7; }
     #join label { font-size: 13px; display: grid; gap: 4px; }
-    #join input[type=text], #join input[type=password] {
-      font: inherit; padding: 8px 10px; border: 3px solid var(--ink); background: #fff; outline: none;
-    }
+    #join input { font: inherit; padding: 8px 10px; border: 3px solid var(--ink); background: #fff; outline: none; }
     #join input:focus { border-color: var(--pink); }
-    .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
-    .swatches button {
-      width: 30px; height: 30px; border: 3px solid var(--ink); cursor: pointer; padding: 0;
-    }
-    .swatches button.on { outline: 3px solid var(--pink); outline-offset: 2px; }
-    #join .go {
-      font: inherit; font-size: 16px; padding: 10px; border: 3px solid var(--ink); background: var(--pink);
-      color: #fff; cursor: pointer; box-shadow: 3px 3px 0 var(--ink); text-shadow: 1px 1px 0 var(--ink);
-    }
-    #join .go:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+    #join .go { font-size: 16px; padding: 10px; }
     #joinMsg { min-height: 16px; font-size: 12px; color: #d64545; text-align: center; margin: 0; }
 
-    /* 화면 UI */
-    .panel { position: fixed; background: var(--panel); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); }
-    #help { top: 12px; left: 12px; padding: 6px 10px; font-size: 12px; }
+    /* 상단 */
+    #top { top: 12px; left: 12px; padding: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 200px); }
+    #coins { font-size: 15px; padding: 0 8px; min-width: 80px; }
+    #top .btn { font-size: 12px; }
     #who { top: 12px; right: 12px; padding: 8px 12px; font-size: 12px; min-width: 120px; }
     #who b { display: block; margin-bottom: 4px; }
     #who ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
     #who li::before { content: '● '; color: var(--c); }
-    #chat { left: 12px; bottom: 12px; width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; }
-    #log { height: 170px; overflow-y: auto; padding: 8px 10px; font-size: 13px; line-height: 1.5; }
+
+    /* 채팅 */
+    #chat { left: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px)); display: flex; flex-direction: column; }
+    #log { height: 150px; overflow-y: auto; padding: 8px 10px; font-size: 13px; line-height: 1.5; user-select: text; }
     #log .sys { opacity: .6; font-size: 12px; }
     #log .nm { font-weight: bold; }
     #log .tm { opacity: .45; font-size: 10px; margin-left: 4px; }
     #chatForm { display: flex; border-top: 3px solid var(--ink); }
     #chatInput { flex: 1; font: inherit; font-size: 13px; padding: 8px 10px; border: 0; outline: none; background: #fff; min-width: 0; }
-    #chatForm button { font: inherit; border: 0; border-left: 3px solid var(--ink); background: var(--pink); color: #fff; padding: 0 12px; cursor: pointer; }
-    #status { bottom: 12px; right: 12px; padding: 6px 10px; font-size: 12px; display: none; }
-    .hidden { display: none !important; }
+    #chatForm button { border: 0; border-left: 3px solid var(--ink); background: var(--pink); color: #fff; padding: 0 12px; cursor: pointer; }
+
+    /* 단축바 */
+    #hotbarWrap { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+    #itemName { background: rgba(74,59,92,.85); color: #fff; padding: 3px 10px; font-size: 12px; transition: opacity .4s; }
+    #hotbar { display: flex; gap: 4px; padding: 5px; pointer-events: auto; position: static; }
+    .slot { width: 46px; height: 46px; border: 3px solid #c9b8a3; background: #fffaf2; position: relative; display: grid; place-items: center; cursor: pointer; }
+    .slot.sel { border-color: var(--pink); background: #ffe3ea; box-shadow: 0 0 0 2px var(--ink); }
+    .slot .n { position: absolute; right: 2px; bottom: 0; font-size: 11px; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff; }
+    .slot .k { position: absolute; left: 3px; top: 1px; font-size: 9px; opacity: .5; }
+    @media (max-width: 1000px) { #chat { bottom: 92px; } }
+
+    #toasts { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; pointer-events: none; z-index: 25; }
+    .toast { background: var(--cream); border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); padding: 6px 14px; font-size: 13px; animation: pop .25s ease-out; }
+    @keyframes pop { from { transform: scale(.7); opacity: 0; } }
+    #status { bottom: 80px; right: 12px; padding: 6px 10px; font-size: 12px; display: none; }
+
+    /* 창 (가방/상점/퀘스트/꾸미기/표지판) */
+    #modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(43, 34, 51, .35); z-index: 20; }
+    #modal .box { background: var(--cream); border: 4px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); width: min(600px, calc(100vw - 24px)); max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+    #modal header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 3px solid var(--ink); background: #ffe3ea; }
+    #modal header h2 { margin: 0; font-size: 17px; flex: 1; }
+    #modal header .x { border: 0; background: none; font-size: 20px; cursor: pointer; }
+    #modalBody { padding: 14px; overflow-y: auto; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tabs .btn.on { background: var(--pink); color: #fff; text-shadow: 1px 1px 0 var(--ink); }
+    .grid { display: grid; grid-template-columns: repeat(9, 46px); gap: 4px; justify-content: center; }
+    .grid .slot.pick { border-color: #6ec6ff; background: #e3f4ff; }
+    .grid .hb { border-color: #e2b07c; }
+    .info { margin-top: 10px; min-height: 44px; font-size: 13px; padding: 8px 10px; background: #fff; border: 2px dashed #c9b8a3; display: flex; align-items: center; gap: 8px; }
+    .info .grow { flex: 1; }
+    .rows { display: grid; gap: 6px; }
+    .row { display: flex; align-items: center; gap: 10px; background: #fff; border: 2px solid #e8d9c6; padding: 6px 10px; font-size: 13px; }
+    .row .grow { flex: 1; }
+    .row small { opacity: .65; display: block; font-size: 11px; }
+    .row .btn { font-size: 12px; padding: 3px 8px; }
+    .q.done { opacity: .55; }
+    .bar { height: 8px; background: #eee3d5; border: 2px solid var(--ink); margin-top: 4px; }
+    .bar i { display: block; height: 100%; background: #7ed492; }
+    .av { display: grid; grid-template-columns: 170px 1fr; gap: 14px; }
+    @media (max-width: 560px) { .av { grid-template-columns: 1fr; } }
+    .av canvas { width: 160px; height: 200px; image-rendering: pixelated; background: #8fd16f; border: 3px solid var(--ink); }
+    .opt { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 13px; }
+    .pick-row { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    .sw { width: 24px; height: 24px; border: 3px solid var(--ink); cursor: pointer; padding: 0; }
+    .sw.on { outline: 3px solid var(--pink); outline-offset: 1px; }
+    .chip { border: 2px solid var(--ink); background: #fff; padding: 2px 7px; font-size: 12px; cursor: pointer; }
+    .chip.on { background: var(--pink); color: #fff; }
+    .chip:disabled { opacity: .4; cursor: default; }
+    textarea { width: 100%; font: inherit; font-size: 15px; padding: 10px; border: 3px solid var(--ink); resize: none; outline: none; }
+    .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
+    .keys kbd { background: #fff; border: 2px solid var(--ink); padding: 1px 6px; font-family: inherit; font-size: 12px; white-space: nowrap; justify-self: start; }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
 
-  <div id="help" class="panel hidden">⌨️ WASD / 방향키 이동 · Enter 채팅</div>
+  <div id="top" class="panel hidden">
+    <span id="coins">💰 0</span>
+    <button class="btn" data-open="bag">🎒 가방 <small>I</small></button>
+    <button class="btn" data-open="avatar">👗 꾸미기 <small>C</small></button>
+    <button class="btn" data-open="quests">📜 퀘스트 <small>Q</small></button>
+    <button class="btn" data-open="help">❓ 조작법</button>
+  </div>
   <div id="who" class="panel hidden"><b>접속 중 0명</b><ul></ul></div>
   <div id="chat" class="panel hidden">
     <div id="log"></div>
@@ -76,27 +131,38 @@
       <button type="submit">전송</button>
     </form>
   </div>
+  <div id="hotbarWrap" class="hidden">
+    <div id="itemName" style="opacity:0"></div>
+    <div id="hotbar" class="panel"></div>
+  </div>
+  <div id="toasts"></div>
   <div id="status" class="panel">연결이 끊겼어요... 다시 연결 중 🔄</div>
+
+  <div id="modal" class="hidden">
+    <div class="box">
+      <header><h2 id="modalTitle"></h2><button class="x" id="modalClose" title="닫기 (Esc)">✕</button></header>
+      <div id="modalBody"></div>
+    </div>
+  </div>
 
   <div id="join">
     <form id="joinForm" autocomplete="off">
       <h1>🏠 비밀 아지트</h1>
-      <p class="sub">우리끼리만 아는 작은 공간</p>
-      <label>내 이름
+      <p class="sub">우리끼리만 아는 작은 마을</p>
+      <label>내 이름 <span style="opacity:.6">(같은 이름으로 들어오면 가방·코인이 이어져요)</span>
         <input type="text" id="nameInput" maxlength="12" placeholder="예: 동생" required />
-      </label>
-      <label>옷 색깔
-        <div class="swatches" id="swatches"></div>
       </label>
       <label>비밀 코드 <span style="opacity:.6">(설정된 경우에만)</span>
         <input type="password" id="codeInput" maxlength="40" />
       </label>
-      <button class="go" type="submit">입장하기 ✨</button>
+      <button class="btn pink go" type="submit">입장하기 ✨</button>
       <p id="joinMsg"></p>
     </form>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="shared.js"></script>
+  <script src="draw.js"></script>
   <script src="client.js"></script>
 </body>
 </html>
