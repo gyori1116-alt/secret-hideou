@@ -5,9 +5,10 @@
 
   const TILE = 16;
   const OW = 64, OH = 48;             // 예전 맵 크기 (마을)
-  const W = 100, H = 112;             // 지금 맵 크기: 마을(왼쪽 위) · 숲(오른쪽 위) · 집 짓는 들판(가운데) · 동굴(아래)
-  const CY = 80;                      // 동굴이 시작하는 줄
-  const WORLD_VERSION = 4;
+  const W = 100, H = 112;             // 맵 크기: 마을(왼쪽 위) · 집 짓는 땅(오른쪽 위 + 가운데) · 생산 구역(맨 아래: 왼쪽 동굴, 오른쪽 숲)
+  const CY = 80;                      // 생산 구역이 시작하는 줄
+  const BX = 50;                      // 생산 구역에서 동굴(왼쪽)과 숲(오른쪽)을 나누는 칸
+  const WORLD_VERSION = 5;
   const REACH = 3.6 * TILE;           // 손이 닿는 거리
   const BITE_WINDOW = 1200;           // 찌가 흔들린 뒤 당길 수 있는 시간(ms)
   const SAPLING_MS = 60000;           // 묘목이 나무가 되는 시간
@@ -211,6 +212,72 @@
     windmill: { name: '꼬마 풍차', obj: 'windmill', cat: 'furniture', questOnly: 1, desc: '빙글빙글' },
     deer_trophy: { name: '사슴뿔 장식', obj: 'deer_trophy', cat: 'furniture', questOnly: 1, desc: '사냥꾼의 증표' },
     music_box: { name: '오르골', obj: 'music_box', cat: 'furniture', questOnly: 1, desc: 'E로 음악을 들어요 🎶' },
+    snowman: { name: '눈사람', obj: 'snowman', cat: 'furniture', questOnly: 1, desc: '녹지 않는 눈사람 ⛄' },
+    teddy_big: { name: '왕 곰인형', obj: 'teddy_big', cat: 'furniture', questOnly: 1, desc: '엄청 큰 곰인형' },
+
+    // ── v5 새 콘텐츠 ──
+    chest_big: { name: '큰 상자', obj: 'chest_big', cat: 'furniture', desc: 'E로 열어서 54칸 보관해요 (Lv.10 만들기)' },
+    notice_board: { name: '마을 게시판', obj: 'notice_board', cat: 'deco', desc: '건의함과 금주의 MVP' },
+    // 작물
+    seed_tomato: { name: '토마토 씨앗', seed: 'tomato', sell: 6, desc: '밭에 심어요' },
+    seed_corn: { name: '옥수수 씨앗', seed: 'corn', sell: 8, desc: '밭에 심어요' },
+    seed_potato: { name: '감자 씨앗', seed: 'potato', sell: 9, desc: '밭에 심어요 (여러 개 나와요)' },
+    seed_watermelon: { name: '수박 씨앗', seed: 'watermelon', sell: 20, desc: '밭에 심어요 (오래 걸리지만 아주 비싸요)' },
+    tomato: { name: '토마토', sell: 28, desc: '상점에 팔거나 요리해요' },
+    corn: { name: '옥수수', sell: 40, desc: '상점에 팔거나 요리해요' },
+    potato: { name: '감자', sell: 22, desc: '상점에 팔거나 요리해요' },
+    watermelon: { name: '수박', sell: 140, desc: '상점에 팔거나 요리해요' },
+    // 동물
+    animal_duck: { name: '오리', animal: 'duck', stack: 10, desc: 'Space로 풀어줘요. 작물을 먹으면 오리알을 낳아요' },
+    animal_goat: { name: '염소', animal: 'goat', stack: 10, desc: 'Space로 풀어줘요. 작물을 먹으면 염소젖을 줘요' },
+    animal_pig: { name: '돼지', animal: 'pig', stack: 10, desc: 'Space로 풀어줘요. 작물을 먹으면 트러플을 찾아와요' },
+    duck_egg: { name: '오리알', sell: 35, desc: '오리가 낳은 알' },
+    goat_milk: { name: '염소젖', sell: 70, desc: '고소한 염소젖' },
+    truffle: { name: '트러플', sell: 160, desc: '돼지가 찾아온 귀한 버섯' },
+    // 펫
+    pet_cat: { name: '고양이', animal: 'cat', stack: 1, desc: 'Space로 데리고 나와요. E로 따라오기/집에 두기' },
+    pet_cat_black: { name: '검은 고양이', animal: 'cat_black', stack: 1, desc: '반짝이는 눈의 검은 고양이' },
+    pet_bunny: { name: '토끼', animal: 'pbunny', stack: 1, desc: '깡총깡총 귀여운 토끼' },
+    pet_cat_calico: { name: '삼색 고양이', animal: 'cat_calico', stack: 1, questOnly: 1, desc: '행운의 삼색 고양이' },
+    // 요리
+    tomato_soup: { name: '토마토 수프', food: 1, sell: 70, desc: '새콤따끈' },
+    corn_soup: { name: '콘수프', food: 1, sell: 130, desc: '부드러워요' },
+    baked_potato: { name: '군감자', food: 1, sell: 55, desc: '호호 불어 먹어요' },
+    fries: { name: '감자튀김', food: 1, sell: 75, desc: '바삭바삭' },
+    salad: { name: '샐러드', food: 1, sell: 60, desc: '아삭아삭' },
+    watermelon_juice: { name: '수박 주스', food: 1, sell: 200, desc: '시원해요' },
+    duck_egg_roll: { name: '계란말이', food: 1, sell: 90, desc: '도톰한 계란말이' },
+    pizza: { name: '피자', food: 1, sell: 210, desc: '치즈가 쭉~' },
+    truffle_pasta: { name: '트러플 파스타', food: 1, sell: 380, desc: '고급 요리' },
+    // 벽·바닥
+    wall_flower: { name: '꽃무늬 벽지', obj: 'wall_flower', cat: 'wall', desc: '집을 짓는 벽' },
+    wall_star: { name: '별무늬 벽지', obj: 'wall_star', cat: 'wall', desc: '밤하늘 벽지' },
+    wall_green: { name: '초록 벽', obj: 'wall_green', cat: 'wall', desc: '집을 짓는 벽' },
+    wall_purple: { name: '보라 벽', obj: 'wall_purple', cat: 'wall', desc: '집을 짓는 벽' },
+    wall_wainscot: { name: '웨인스코팅 벽', obj: 'wall_wainscot', cat: 'wall', desc: '아래는 나무, 위는 하얀 벽' },
+    floor_hex: { name: '육각 타일', ground: 'floor_hex', cat: 'floor', desc: '벌집 모양 타일' },
+    floor_straw: { name: '돗자리', ground: 'floor_straw', cat: 'floor', desc: '시원한 돗자리' },
+    floor_wood_white: { name: '화이트 원목', ground: 'floor_wood_white', cat: 'floor', desc: '밝은 나무 바닥' },
+    floor_stone_tile: { name: '석재 타일', ground: 'floor_stone_tile', cat: 'floor', desc: '큼직한 돌 타일' },
+    carpet_red: { name: '빨간 카펫', ground: 'carpet_red', cat: 'floor', desc: '레드카펫!' },
+    rug_blue: { name: '파란 러그', ground: 'rug_blue', cat: 'floor', desc: '이어서 깔면 큰 러그가 돼요' },
+    // 가구
+    sofa_blue: { name: '파란 소파', obj: 'sofa_blue', cat: 'furniture', desc: 'E로 앉아요. 나란히 놓으면 이어져요' },
+    sofa_green: { name: '초록 소파', obj: 'sofa_green', cat: 'furniture', desc: 'E로 앉아요. 나란히 놓으면 이어져요' },
+    bed_pink: { name: '분홍 침대', obj: 'bed_pink', cat: 'furniture', desc: 'E로 누워요' },
+    bed_blue: { name: '파란 침대', obj: 'bed_blue', cat: 'furniture', desc: 'E로 누워요' },
+    rocking_chair: { name: '흔들의자', obj: 'rocking_chair', cat: 'furniture', desc: 'E로 앉아요' },
+    vanity: { name: '화장대', obj: 'vanity', cat: 'furniture', desc: 'E로 거울을 봐요' },
+    guitar: { name: '기타', obj: 'guitar', cat: 'furniture', desc: 'E로 연주해요 🎸' },
+    globe: { name: '지구본', obj: 'globe', cat: 'furniture', desc: '빙글빙글' },
+    bonsai: { name: '분재', obj: 'bonsai', cat: 'furniture', desc: '작은 소나무' },
+    lantern: { name: '등불', obj: 'lantern', cat: 'furniture', desc: '은은하게 빛나요' },
+    candle: { name: '촛대', obj: 'candle', cat: 'furniture', desc: '촛불이 일렁여요' },
+    fishbowl: { name: '금붕어 어항', obj: 'fishbowl', cat: 'furniture', desc: '금붕어가 뻐끔뻐끔' },
+    oven: { name: '오븐', obj: 'oven', cat: 'furniture', desc: 'E로 요리해요 🥧' },
+    coffee_machine: { name: '커피머신', obj: 'coffee_machine', cat: 'furniture', desc: 'E로 커피를 내려요 ☕' },
+    rice_cooker: { name: '밥솥', obj: 'rice_cooker', cat: 'furniture', desc: 'E로 요리해요' },
+    rubber_duck: { name: '고무오리', obj: 'rubber_duck', cat: 'furniture', desc: '꽥꽥' },
   };
   for (const id in ITEMS) {
     const it = ITEMS[id];
@@ -264,7 +331,12 @@
     trophy: { solid: 1, msg: '반짝반짝 빛나는 트로피 🏆' }, cat_tower: { solid: 1, msg: '냥! 🐱' }, fountain: { solid: 1, anim: 1 },
     xmas_tree: { solid: 1, anim: 1 }, throne: { solid: 1, sit: 1 }, royal_bed: { solid: 1, lie: 1 }, statue: { solid: 1 },
     arcade: { solid: 1, toggle: 1, anim: 1 }, telescope: { solid: 1, msg: '반짝이는 별이 보여요 🌟' },
-    chest: { solid: 1, chest: 1 },
+    chest: { solid: 1, chest: 27 }, chest_big: { solid: 1, chest: 54 }, notice_board: { solid: 1, fixed: 1 },
+    snowman: { solid: 1, msg: '차가워요 ⛄' }, teddy_big: { solid: 1, msg: '포근포근 꼬옥 🧸' },
+    sofa_blue: { solid: 1, sit: 1 }, sofa_green: { solid: 1, sit: 1 }, bed_pink: { solid: 1, lie: 1 }, bed_blue: { solid: 1, lie: 1 },
+    rocking_chair: { solid: 0, sit: 1 }, vanity: { solid: 1, msg: '오늘도 반짝반짝 ✨' }, guitar: { solid: 1, fx: '🎸' }, globe: { solid: 1, msg: '세계 여행 가고 싶다 🌏' },
+    bonsai: { solid: 1 }, lantern: { solid: 1, light: 3 }, candle: { solid: 1, light: 3, anim: 1 }, fishbowl: { solid: 1, anim: 1 },
+    oven: { solid: 1, cook: 1 }, coffee_machine: { solid: 1, fx: '☕' }, rice_cooker: { solid: 1, cook: 1 }, rubber_duck: { solid: 0, msg: '꽥! 🦆' },
     crystal_lamp: { solid: 1, light: 5 }, scarecrow: { solid: 1 }, windmill: { solid: 1, anim: 1 }, deer_trophy: { solid: 1 },
     music_box: { solid: 1, fx: '🎶' },
   };
@@ -285,6 +357,11 @@
     wall_gold: ['#ffe27a', '#f2c230', '#b58a12'],
     wall_rainbow: ['#ffffff', '#ff8fab', '#9b8cff'],
     wall_candy: ['#ffffff', '#ff5c8a', '#d63d6c'],
+    wall_flower: ['#fff4f7', '#ffe0ea', '#d9a0b3'],
+    wall_star: ['#3b3a6b', '#2b2a55', '#1d1c3d'],
+    wall_green: ['#cdebc4', '#9fd18f', '#6aa35a'],
+    wall_purple: ['#e6dcff', '#c9b8ff', '#9580d6'],
+    wall_wainscot: ['#fdfaf3', '#a5703f', '#7a4e2d'],
   };
   for (const t in WALLS) OBJ[t] = Object.assign(OBJ[t] || {}, { solid: 1, wall: 1 });
   for (const id in ITEMS) {
@@ -294,7 +371,14 @@
   }
   const isSolidObj = (o) => !!o && !!(OBJ[o.t] && OBJ[o.t].solid) && !(OBJ[o.t].door && o.open);
   // 돌릴 수 있는 것: 가구 (o.r = 시계 방향으로 90°씩 돌린 횟수, 0 앞 / 1 왼쪽 / 2 뒤 / 3 오른쪽)
-  const canRotate = (t) => !!OBJ[t] && !!OBJ[t].item && ITEMS[OBJ[t].item].cat === 'furniture';
+  // 어느 쪽에서 봐도 똑같은 물건은 돌리지 않아요
+  const NO_ROTATE = new Set(['campfire', 'log_seat', 'plant', 'plant_big', 'cactus', 'bonsai', 'candle', 'lantern', 'cushion', 'beanbag', 'rubber_duck',
+    'fishbowl', 'globe', 'snowman', 'statue', 'fountain', 'xmas_tree', 'crystal_lamp', 'trophy', 'music_box', 'teddy', 'teddy_big']);
+  const canRotate = (t) => !!OBJ[t] && !!OBJ[t].item && ITEMS[OBJ[t].item].cat === 'furniture' && !NO_ROTATE.has(t);
+  // 조리대·싱크대·테이블 위에 올릴 수 있는 것 (surface 위에 onTop)
+  for (const t of ['counter', 'sink', 'table', 'desk', 'side_table', 'drawer']) OBJ[t].surface = 1;
+  for (const t of ['dish_rack', 'kitchen_shelf', 'microwave', 'coffee_machine', 'rice_cooker', 'fishbowl', 'candle', 'globe', 'bonsai', 'music_box', 'trophy', 'rubber_duck'])
+    OBJ[t].onTop = 1;
   const ROT_NAMES = ['앞', '왼쪽', '뒤', '오른쪽'];
   const ROT_DIRS = ['down', 'left', 'up', 'right']; // 앉았을 때 바라보는 쪽
 
@@ -305,11 +389,15 @@
     strawberry: { name: '딸기', seed: 'seed_straw', produce: 'strawberry', stageMs: 22000, yield: [2, 3] },
     sunflower: { name: '해바라기', seed: 'seed_sunflower', produce: 'sunflower', stageMs: 28000, yield: [1, 2] },
     pumpkin: { name: '호박', seed: 'seed_pumpkin', produce: 'pumpkin', stageMs: 40000, yield: [1, 1] },
+    tomato: { name: '토마토', seed: 'seed_tomato', produce: 'tomato', stageMs: 25000, yield: [2, 3] },
+    corn: { name: '옥수수', seed: 'seed_corn', produce: 'corn', stageMs: 32000, yield: [1, 2] },
+    potato: { name: '감자', seed: 'seed_potato', produce: 'potato', stageMs: 30000, yield: [2, 4] },
+    watermelon: { name: '수박', seed: 'seed_watermelon', produce: 'watermelon', stageMs: 55000, yield: [1, 1] },
   };
 
   // ───────── 동물 ─────────
   // 집동물: 작물을 먹이면 produceMs 뒤에 선물 / 야생동물: 활이나 X로 사냥 / pet: 따라다니는 강아지
-  const FEED = ['carrot', 'strawberry', 'sunflower', 'pumpkin'];
+  const FEED = ['carrot', 'strawberry', 'sunflower', 'pumpkin', 'tomato', 'corn', 'potato', 'watermelon'];
   const ANIMALS = {
     chicken: { name: '닭', item: 'animal_chicken', produce: 'egg', produceMs: 30000, speed: 16 },
     cow: { name: '소', item: 'animal_cow', produce: 'milk', produceMs: 45000, speed: 12 },
@@ -320,13 +408,21 @@
     dog: { name: '강아지', item: 'pet_dog', pet: 1, speed: 40, col: ['#d9a066', '#b07a4f', '#fff3e0'] },
     dog_white: { name: '하얀 강아지', item: 'pet_dog_white', pet: 1, speed: 40, col: ['#fbf8f2', '#e2dccf', '#ffd1dc'] },
     dog_spot: { name: '점박이 강아지', item: 'pet_dog_spot', pet: 1, speed: 40, col: ['#ffffff', '#3b3740', '#ffd1dc'] },
+    cat: { name: '고양이', item: 'pet_cat', pet: 1, speed: 38, look: 'cat', col: ['#ffb36b', '#e8954a', '#fff3e0'] },
+    cat_black: { name: '검은 고양이', item: 'pet_cat_black', pet: 1, speed: 38, look: 'cat', col: ['#3b3740', '#2b2233', '#ffe066'] },
+    cat_calico: { name: '삼색 고양이', item: 'pet_cat_calico', pet: 1, speed: 38, look: 'cat', col: ['#ffffff', '#ffb36b', '#3b3740'] },
+    pbunny: { name: '토끼', item: 'pet_bunny', pet: 1, speed: 36, look: 'bunny', col: ['#fbf8f2', '#ffd1dc', '#e2dccf'] },
+    duck: { name: '오리', item: 'animal_duck', produce: 'duck_egg', produceMs: 40000, speed: 14 },
+    goat: { name: '염소', item: 'animal_goat', produce: 'goat_milk', produceMs: 55000, speed: 14 },
+    pig: { name: '돼지', item: 'animal_pig', produce: 'truffle', produceMs: 80000, speed: 12 },
   };
   const WILD_SPAWN = { rabbit: 8, boar: 4, deer: 4 };
   const BOW_RANGE = 7 * TILE;
-  const MAX_PETS = 2;
+  // 펫: 따라다니는 건 1마리, 꺼내 둘 수 있는 수는 레벨에 따라 늘어요
+  const maxPets = (lv) => Math.min(10, 2 + Math.floor((lv || 1) / 5));
 
   // ───────── 지역 ─────────
-  const zoneAt = (x, y) => (y >= CY ? 'cave' : y >= OH ? 'meadow' : x >= OW ? 'forest' : 'town');
+  const zoneAt = (x, y) => (y >= CY ? (x < BX ? 'cave' : 'forest') : y >= OH || x >= OW ? 'meadow' : 'town');
 
   // ───────── 낚시 (지역마다 다른 물고기) ─────────
   const FISH_TABLES = {
@@ -344,16 +440,25 @@
   }
 
   // ───────── 상점 (탭별) ─────────
+  // [아이템, 기본 가격, 필요 레벨]  (레벨이 낮으면 🔒 잠겨 있어요)
   const SHOP_TABS = [
-    ['farm', '🌱 농사', [['seed_carrot', 5], ['seed_straw', 10], ['seed_sunflower', 15], ['seed_pumpkin', 25], ['sapling', 15], ['flower', 5], ['path', 2], ['sand', 2]]],
-    ['build', '🧱 벽·바닥', [['wall_white', 3], ['wall_pink', 4], ['wall_mint', 4], ['wall_blue', 4], ['wall_yellow', 4], ['wall_paper', 6], ['wall_dark', 5],
-      ['door_white', 20], ['floor_pink', 3], ['floor_check', 3], ['floor_mint', 4], ['floor_kitchen', 4], ['floor_herring', 5], ['floor_marble', 8],
-      ['rug', 6], ['rug_green', 6], ['carpet_blue', 6]]],
-    ['furni', '🛋️ 가구', [['plant', 25], ['cactus', 35], ['plant_big', 50], ['cushion', 30], ['beanbag', 70], ['armchair', 90], ['sofa', 60], ['bed', 80],
-      ['side_table', 45], ['picture', 40], ['clock', 60], ['display_shelf', 70], ['stand_lamp', 60], ['teddy', 100], ['tv', 300], ['computer', 400], ['bench', 50], ['chest', 40]]],
-    ['kitchen', '🍳 주방', [['stove', 200], ['fridge', 250], ['sink', 150], ['counter', 40], ['microwave', 120], ['dish_rack', 50], ['kitchen_shelf', 60], ['floor_kitchen', 4]]],
-    ['bath', '🛁 욕실', [['toilet', 120], ['bathtub', 220], ['washbasin', 100], ['shower', 180], ['mirror', 70], ['towel_rack', 40], ['washer', 260], ['bath_shelf', 50], ['floor_bath', 4]]],
-    ['animal', '🐶 동물·도구', [['animal_chicken', 80], ['animal_sheep', 180], ['animal_cow', 250], ['pet_dog', 400], ['pet_dog_white', 600], ['bow', 120]]],
+    ['farm', '🌱 농사', [['seed_carrot', 5, 1], ['seed_straw', 10, 1], ['seed_sunflower', 15, 2], ['seed_tomato', 18, 3], ['seed_pumpkin', 25, 4],
+      ['seed_corn', 24, 5], ['seed_potato', 22, 7], ['seed_watermelon', 60, 10], ['sapling', 15, 1], ['flower', 5, 1], ['path', 2, 1], ['sand', 2, 1]]],
+    ['build', '🧱 벽·바닥', [['wall_white', 3, 1], ['wall_pink', 4, 1], ['wall_mint', 4, 1], ['wall_blue', 4, 1], ['wall_yellow', 4, 1], ['wall_green', 4, 2],
+      ['wall_purple', 4, 2], ['wall_paper', 6, 3], ['wall_dark', 5, 3], ['wall_wainscot', 7, 5], ['wall_flower', 8, 6], ['wall_star', 9, 8], ['door_white', 20, 2],
+      ['floor_pink', 3, 1], ['floor_check', 3, 1], ['floor_mint', 4, 2], ['floor_kitchen', 4, 2], ['floor_wood_white', 5, 3], ['floor_herring', 5, 4],
+      ['floor_straw', 5, 4], ['floor_hex', 6, 5], ['floor_marble', 8, 6], ['floor_stone_tile', 8, 6], ['rug', 6, 2], ['rug_green', 6, 2], ['rug_blue', 6, 3],
+      ['carpet_blue', 6, 3], ['carpet_red', 7, 4]]],
+    ['furni', '🛋️ 가구', [['chest', 40, 1], ['plant', 25, 1], ['cushion', 30, 1], ['cactus', 35, 2], ['sofa', 60, 2], ['bed', 80, 2], ['side_table', 45, 2],
+      ['picture', 40, 2], ['bench', 50, 2], ['plant_big', 50, 3], ['beanbag', 70, 3], ['clock', 60, 3], ['stand_lamp', 60, 3], ['teddy', 100, 3], ['candle', 50, 3],
+      ['armchair', 90, 4], ['sofa_blue', 80, 4], ['sofa_green', 80, 4], ['bed_pink', 100, 4], ['bed_blue', 100, 4], ['display_shelf', 70, 4], ['lantern', 70, 4],
+      ['rocking_chair', 120, 5], ['globe', 90, 5], ['fishbowl', 110, 5], ['tv', 300, 6], ['vanity', 160, 6], ['bonsai', 140, 6], ['guitar', 220, 7], ['computer', 400, 9]]],
+    ['kitchen', '🍳 주방', [['counter', 40, 1], ['stove', 200, 2], ['sink', 150, 2], ['dish_rack', 50, 2], ['fridge', 250, 3], ['kitchen_shelf', 60, 3],
+      ['microwave', 120, 4], ['rice_cooker', 150, 5], ['oven', 280, 6], ['coffee_machine', 260, 7], ['floor_kitchen', 4, 2]]],
+    ['bath', '🛁 욕실', [['towel_rack', 40, 1], ['toilet', 120, 2], ['washbasin', 100, 2], ['mirror', 70, 2], ['bath_shelf', 50, 2], ['rubber_duck', 30, 3],
+      ['bathtub', 220, 4], ['shower', 180, 5], ['washer', 260, 6], ['floor_bath', 4, 2]]],
+    ['animal', '🐶 동물·펫', [['animal_chicken', 80, 1], ['animal_sheep', 180, 3], ['animal_duck', 160, 4], ['animal_cow', 250, 5], ['animal_goat', 320, 8],
+      ['animal_pig', 450, 12], ['pet_dog', 400, 2], ['pet_cat', 450, 6], ['pet_cat_black', 550, 8], ['pet_bunny', 500, 9], ['pet_dog_white', 600, 10], ['bow', 120, 3]]],
   ];
   // 사는 가격 배수 (돈이 너무 잘 벌려서 2배로 올렸어요. 파는 가격은 그대로)
   const PRICE_MULT = 2;
@@ -400,27 +505,38 @@
     { out: 'bathtub', n: 1, need: { stone: 5, iron: 1 } },
     { out: 'stand_lamp', n: 1, need: { iron: 1, wood: 1 } },
     { out: 'chest', n: 1, need: { wood: 8 } },
+    { out: 'chest_big', n: 1, need: { wood: 12, iron: 4 }, lv: 10 },
   ];
 
   // ───────── 요리 (가스레인지·전자레인지·모닥불·벽난로 앞에서 E) ─────────
+  // lv: 이 레벨부터 만들 수 있어요
   const COOK = [
-    { out: 'carrot_soup', need: { carrot: 2 } },
-    { out: 'fried_egg', need: { egg: 1 } },
-    { out: 'grilled_fish', need: { fish_crucian: 1 } },
-    { out: 'steak', need: { meat: 1 } },
-    { out: 'strawberry_jam', need: { strawberry: 3 } },
-    { out: 'strawberry_milk', need: { strawberry: 1, milk: 1 } },
-    { out: 'omelet', need: { egg: 2, milk: 1 } },
-    { out: 'sun_cookie', need: { sunflower: 1, egg: 1 } },
-    { out: 'pumpkin_pie', need: { pumpkin: 1, egg: 1, milk: 1 } },
-    { out: 'mushroom_soup', need: { mushroom: 2, milk: 1 } },
-    { out: 'berry_tart', need: { berry: 3, egg: 1 } },
-    { out: 'trout_grill', need: { fish_trout: 1, mushroom: 1 } },
-    { out: 'bbq', need: { meat: 2, carrot: 1 } },
-    { out: 'veggie_stew', need: { carrot: 1, pumpkin: 1, mushroom: 1 } },
-    { out: 'sashimi', need: { fish_tropical: 1, fish_puffer: 1 } },
-    { out: 'cave_stew', need: { fish_blind: 1, mushroom: 1 } },
-    { out: 'golden_dish', need: { fish_golden: 1, carrot: 2, mushroom: 2 } },
+    { out: 'carrot_soup', need: { carrot: 2 }, lv: 1 },
+    { out: 'fried_egg', need: { egg: 1 }, lv: 1 },
+    { out: 'grilled_fish', need: { fish_crucian: 1 }, lv: 1 },
+    { out: 'steak', need: { meat: 1 }, lv: 1 },
+    { out: 'strawberry_jam', need: { strawberry: 3 }, lv: 2 },
+    { out: 'strawberry_milk', need: { strawberry: 1, milk: 1 }, lv: 2 },
+    { out: 'omelet', need: { egg: 2, milk: 1 }, lv: 3 },
+    { out: 'tomato_soup', need: { tomato: 2 }, lv: 3 },
+    { out: 'sun_cookie', need: { sunflower: 1, egg: 1 }, lv: 3 },
+    { out: 'trout_grill', need: { fish_trout: 1, mushroom: 1 }, lv: 4 },
+    { out: 'salad', need: { tomato: 1, carrot: 1 }, lv: 4 },
+    { out: 'duck_egg_roll', need: { duck_egg: 2 }, lv: 4 },
+    { out: 'mushroom_soup', need: { mushroom: 2, milk: 1 }, lv: 4 },
+    { out: 'berry_tart', need: { berry: 3, egg: 1 }, lv: 5 },
+    { out: 'bbq', need: { meat: 2, carrot: 1 }, lv: 5 },
+    { out: 'pumpkin_pie', need: { pumpkin: 1, egg: 1, milk: 1 }, lv: 5 },
+    { out: 'corn_soup', need: { corn: 2, milk: 1 }, lv: 5 },
+    { out: 'veggie_stew', need: { carrot: 1, pumpkin: 1, mushroom: 1 }, lv: 6 },
+    { out: 'sashimi', need: { fish_tropical: 1, fish_puffer: 1 }, lv: 6 },
+    { out: 'baked_potato', need: { potato: 1 }, lv: 7 },
+    { out: 'cave_stew', need: { fish_blind: 1, mushroom: 1 }, lv: 7 },
+    { out: 'fries', need: { potato: 2 }, lv: 8 },
+    { out: 'pizza', need: { tomato: 1, goat_milk: 1, corn: 1 }, lv: 9 },
+    { out: 'golden_dish', need: { fish_golden: 1, carrot: 2, mushroom: 2 }, lv: 10 },
+    { out: 'watermelon_juice', need: { watermelon: 1 }, lv: 10 },
+    { out: 'truffle_pasta', need: { truffle: 1, egg: 1 }, lv: 12 },
   ];
   const FOOD_BUFF_MS = 30000;
 
@@ -440,16 +556,19 @@
   const TOPS = [
     { id: 'tshirt', name: '티셔츠' }, { id: 'hoodie', name: '후드티' }, { id: 'stripe', name: '줄무늬' },
     { id: 'dress', name: '원피스' }, { id: 'overalls', name: '멜빵' }, { id: 'shirt', name: '셔츠' },
-    { id: 'suit', name: '정장', price: 400 }, { id: 'sailor', name: '세일러복', price: 350 }, { id: 'startee', name: '별무늬 티', price: 300 },
+    { id: 'suit', name: '정장', price: 400, lv: 6 }, { id: 'sailor', name: '세일러복', price: 350, lv: 5 }, { id: 'startee', name: '별무늬 티', price: 300, lv: 3 },
     { id: 'chefcoat', name: '요리사복', quest: 1 }, { id: 'armor', name: '기사 갑옷', quest: 1 },
     { id: 'hanbok', name: '한복', quest: 1 }, { id: 'royal', name: '왕실 드레스', quest: 1 },
+    { id: 'pajama', name: '잠옷', price: 200, lv: 2 }, { id: 'jersey', name: '체육복', price: 250, lv: 3 }, { id: 'raincoat', name: '우비', price: 300, lv: 4 },
+    { id: 'pirate', name: '해적 옷', quest: 1 },
   ];
   const CLOTH = ['#ff8fab', '#ffb36b', '#ffd95e', '#7ed492', '#6ec6ff', '#9b8cff', '#c9a0ff', '#f5f5f5', '#4a3b5c', '#e85d5d', '#8b5a3c', '#555a6e'];
   const ACCESSORIES = [
     { id: 'none', name: '없음' }, { id: 'ribbon', name: '리본' }, { id: 'flower', name: '꽃핀' }, { id: 'glasses', name: '안경' },
-    { id: 'cap', name: '모자', price: 150 }, { id: 'bunny', name: '토끼 귀', price: 300 }, { id: 'beanie', name: '털모자', price: 200 },
-    { id: 'beret', name: '베레모', price: 250 }, { id: 'headphones', name: '헤드폰', price: 350 }, { id: 'sunglasses', name: '선글라스', price: 300 },
-    { id: 'frog', name: '개구리 모자', price: 400 },
+    { id: 'cap', name: '모자', price: 150, lv: 1 }, { id: 'bunny', name: '토끼 귀', price: 300, lv: 4 }, { id: 'beanie', name: '털모자', price: 200, lv: 2 },
+    { id: 'beret', name: '베레모', price: 250, lv: 3 }, { id: 'headphones', name: '헤드폰', price: 350, lv: 5 }, { id: 'sunglasses', name: '선글라스', price: 300, lv: 6 },
+    { id: 'frog', name: '개구리 모자', price: 400, lv: 8 }, { id: 'bearears', name: '곰 귀', price: 300, lv: 4 }, { id: 'partyhat', name: '고깔모자', price: 350, lv: 7 },
+    { id: 'starpin', name: '별핀' }, { id: 'piratehat', name: '해적 모자', quest: 1 },
     { id: 'catears', name: '고양이 귀', quest: 1 }, { id: 'crown', name: '왕관', quest: 1 }, { id: 'chef', name: '요리사 모자', quest: 1 },
     { id: 'strawhat', name: '밀짚모자', quest: 1 }, { id: 'fishhat', name: '물고기 모자', quest: 1 }, { id: 'flowercrown', name: '꽃 왕관', quest: 1 },
     { id: 'horns', name: '악마 뿔', quest: 1 }, { id: 'halo', name: '천사 링', quest: 1 }, { id: 'witch', name: '마법사 모자', quest: 1 },
@@ -457,8 +576,9 @@
   ];
   const BACKS = [
     { id: 'none', name: '없음' },
-    { id: 'backpack', name: '배낭', price: 250 }, { id: 'cattail', name: '고양이 꼬리', price: 300 }, { id: 'cape', name: '망토', price: 400 },
+    { id: 'backpack', name: '배낭', price: 250, lv: 3 }, { id: 'cattail', name: '고양이 꼬리', price: 300, lv: 5 }, { id: 'cape', name: '망토', price: 400, lv: 8 },
     { id: 'wings', name: '천사 날개', quest: 1 }, { id: 'fairy', name: '요정 날개', quest: 1 }, { id: 'batwings', name: '박쥐 날개', quest: 1 },
+    { id: 'balloon', name: '풍선', price: 300, lv: 6 }, { id: 'guitarback', name: '기타 메기', price: 350, lv: 7 }, { id: 'jetpack', name: '제트팩', quest: 1 },
   ];
   for (const list of [TOPS, ACCESSORIES, BACKS]) for (const c of list) if (c.price) c.price = Math.round(c.price * PRICE_MULT);
   const COSMETICS = {}; // id -> { id, name, slot, price?, quest? }
@@ -490,75 +610,85 @@
 
   // ───────── 도감 (처음 얻으면 등록, 다 모으면 보상) ─────────
   const COLLECTIONS = [
-    { id: 'fish', name: '🎣 낚시 도감', entries: ['fish_minnow', 'fish_crucian', 'fish_tropical', 'fish_puffer', 'fish_golden', 'fish_trout', 'fish_salmon', 'fish_blind', 'fish_shrimp', 'boot'], reward: { coins: 800, unlock: 'fishhat' } },
-    { id: 'farm', name: '🌱 농사 도감', entries: ['carrot', 'strawberry', 'sunflower', 'pumpkin'], reward: { coins: 300, unlock: 'strawhat' } },
-    { id: 'cook', name: '🍳 요리 도감', entries: COOK.map((r) => r.out), reward: { coins: 1000, unlock: 'chefcoat' } },
-    { id: 'hunt', name: '🏹 사냥 도감', entries: ['hunt:rabbit', 'hunt:boar', 'hunt:deer'], reward: { coins: 300, items: { deer_trophy: 1 } } },
-    { id: 'ranch', name: '🐔 목장 도감', entries: ['egg', 'milk', 'wool'], reward: { coins: 300, items: { windmill: 1 } } },
-    { id: 'mine', name: '⛏ 광석 도감', entries: ['stone', 'iron', 'gold', 'gem'], reward: { coins: 500, items: { crystal_lamp: 1 } } },
-    { id: 'forage', name: '🍄 채집 도감', entries: ['wood', 'mushroom', 'berry', 'pinecone'], reward: { coins: 300, unlock: 'fairy' } },
+    { id: 'fish', name: '🎣 낚시 도감', entries: ['fish_minnow', 'fish_crucian', 'fish_tropical', 'fish_puffer', 'fish_golden', 'fish_trout', 'fish_salmon', 'fish_blind', 'fish_shrimp', 'boot'], reward: { coins: 800, exp: 300, unlock: 'fishhat' } },
+    { id: 'farm', name: '🌱 농사 도감', entries: ['carrot', 'strawberry', 'sunflower', 'pumpkin', 'tomato', 'corn', 'potato', 'watermelon'], reward: { coins: 600, exp: 300, unlock: 'strawhat' } },
+    { id: 'cook', name: '🍳 요리 도감', entries: COOK.map((r) => r.out), reward: { coins: 1500, exp: 600, unlock: 'chefcoat' } },
+    { id: 'hunt', name: '🏹 사냥 도감', entries: ['hunt:rabbit', 'hunt:boar', 'hunt:deer'], reward: { coins: 300, exp: 150, items: { deer_trophy: 1 } } },
+    { id: 'ranch', name: '🐔 목장 도감', entries: ['egg', 'milk', 'wool', 'duck_egg', 'goat_milk', 'truffle'], reward: { coins: 600, exp: 300, items: { windmill: 1 } } },
+    { id: 'mine', name: '⛏ 광석 도감', entries: ['stone', 'iron', 'gold', 'gem'], reward: { coins: 500, exp: 200, items: { crystal_lamp: 1 } } },
+    { id: 'forage', name: '🍄 채집 도감', entries: ['wood', 'mushroom', 'berry', 'pinecone'], reward: { coins: 300, exp: 150, unlock: 'fairy' } },
   ];
   const COL_INDEX = {};
   COLLECTIONS.forEach((c) => c.entries.forEach((e) => { COL_INDEX[e] = c.id; }));
   const colName = (e) => (e.startsWith('hunt:') ? ANIMALS[e.slice(5)].name : ITEMS[e].name);
 
   // ───────── 업적 퀘스트 (한 번만) ─────────
+  // 보상은 대부분 코인 + 경험치. 아이템은 가끔, 상점에서 못 사는 것만 (퀘스트 전용·광석·요리·만들기 전용)
   const QUESTS = [
-    { id: 'q_fish1', name: '첫 손맛', desc: '물고기 1마리 낚기', stat: 'fish', goal: 1, reward: { coins: 50 } },
-    { id: 'q_farm1', name: '꼬마 농부', desc: '작물 3개 수확하기', stat: 'harvest', goal: 3, reward: { items: { seed_straw: 5 } } },
-    { id: 'q_wood', name: '나무꾼', desc: '나무 10개 모으기 (나무 앞에서 X)', stat: 'wood', goal: 10, reward: { coins: 80 } },
-    { id: 'q_sign', name: '여긴 내 땅!', desc: '표지판 1개 세우기', stat: 'sign', goal: 1, reward: { items: { flower: 5 } } },
-    { id: 'q_path', name: '길을 만들자', desc: '길 블록 15개 깔기', stat: 'pathPlaced', goal: 15, reward: { items: { stone_path: 20 } } },
-    { id: 'q_style', name: '멋쟁이', desc: '꾸미기(C)에서 아바타 저장하기', stat: 'avatar', goal: 1, reward: { unlock: 'catears' } },
-    { id: 'q_stone', name: '채석장 일꾼', desc: '돌 10개 모으기 (바위 앞에서 X)', stat: 'stone', goal: 10, reward: { items: { lamp: 2 } } },
-    { id: 'q_build', name: '내 집 마련', desc: '벽·창문·문 30개 세우기', stat: 'wallPlaced', goal: 30, reward: { items: { door: 1, window: 2, bed: 1 } } },
-    { id: 'q_deco', name: '인테리어 디자이너', desc: '가구 10개 놓기', stat: 'furniturePlaced', goal: 10, reward: { coins: 200 } },
-    { id: 'q_chat', name: '수다쟁이', desc: '채팅 20번 하기', stat: 'chat', goal: 20, reward: { items: { teddy: 1 } } },
-    { id: 'q_sell', name: '장사꾼', desc: '상점에 팔아서 500코인 벌기', stat: 'earned', goal: 500, reward: { items: { sofa: 2 } } },
-    { id: 'q_fish15', name: '낚시왕', desc: '물고기 15마리 낚기', stat: 'fish', goal: 15, reward: { unlock: 'crown' } },
-    { id: 'q_farm25', name: '풍년이다!', desc: '작물 25개 수확하기', stat: 'harvest', goal: 25, reward: { coins: 500 } },
-    { id: 'q_ranch', name: '목장 주인', desc: '동물에게 작물 5번 먹이기', stat: 'feed', goal: 5, reward: { coins: 150 } },
-    { id: 'q_produce', name: '신선한 선물', desc: '달걀·우유·양털 5개 모으기', stat: 'produce', goal: 5, reward: { items: { animal_chicken: 1 } } },
-    { id: 'q_hunt', name: '사냥꾼', desc: '야생 동물 3마리 사냥하기 (활은 상점에서)', stat: 'hunt', goal: 3, reward: { coins: 200 } },
-    // 새 퀘스트
-    { id: 'q_cook1', name: '꼬마 요리사', desc: '요리 1번 하기 (가스레인지·모닥불 앞에서 E)', stat: 'cook', goal: 1, reward: { coins: 80, items: { seed_carrot: 5 } } },
-    { id: 'q_cook10', name: '요리 솜씨', desc: '요리 10번 하기', stat: 'cook', goal: 10, reward: { unlock: 'chef' } },
-    { id: 'q_cook50', name: '셰프의 길', desc: '요리 50번 하기', stat: 'cook', goal: 50, reward: { items: { fireplace: 1 }, coins: 500 } },
-    { id: 'q_eat', name: '먹방', desc: '음식 5번 먹기 (요리를 들고 Space)', stat: 'eat', goal: 5, reward: { coins: 150 } },
-    { id: 'q_iron', name: '광부', desc: '철광석 10개 캐기 (동굴)', stat: 'iron', goal: 10, reward: { items: { torch: 10 }, coins: 100 } },
-    { id: 'q_gold', name: '골드러시', desc: '금광석 5개 캐기', stat: 'gold', goal: 5, reward: { items: { statue: 1 } } },
-    { id: 'q_gem', name: '보석 사냥꾼', desc: '수정 3개 캐기', stat: 'gem', goal: 3, reward: { items: { crystal_lamp: 1 } } },
-    { id: 'q_mush', name: '버섯 따기', desc: '버섯 10개 따기 (숲에서 E)', stat: 'mushroom', goal: 10, reward: { coins: 120 } },
-    { id: 'q_berry', name: '산딸기 소녀', desc: '산딸기 15개 따기', stat: 'berry', goal: 15, reward: { unlock: 'flowercrown' } },
-    { id: 'q_wood100', name: '숲의 나무꾼', desc: '나무 100개 모으기', stat: 'wood', goal: 100, reward: { items: { windmill: 1 } } },
-    { id: 'q_hunt10', name: '숲의 사냥꾼', desc: '야생 동물 10마리 사냥하기', stat: 'hunt', goal: 10, reward: { unlock: 'horns' } },
-    { id: 'q_sit', name: '쉬어가요', desc: '의자·소파에 5번 앉기 (E)', stat: 'sit', goal: 5, reward: { coins: 60 } },
-    { id: 'q_tv', name: '텔레비전 보자', desc: 'TV 5번 켜기', stat: 'tv', goal: 5, reward: { items: { arcade: 1 } } },
-    { id: 'q_sleep', name: '꿀잠', desc: '침대에 3번 눕기 (E)', stat: 'lie', goal: 3, reward: { items: { music_box: 1 } } },
-    { id: 'q_trade1', name: '첫 거래', desc: '친구와 1번 거래하기 (접속자 목록 🤝)', stat: 'trade', goal: 1, reward: { coins: 100 } },
-    { id: 'q_trade10', name: '무역왕', desc: '친구와 10번 거래하기', stat: 'trade', goal: 10, reward: { items: { trophy: 1 } } },
-    { id: 'q_pet', name: '멍멍이 친구', desc: '강아지 10번 쓰다듬기 (E)', stat: 'pet', goal: 10, reward: { items: { cat_tower: 1 } } },
-    { id: 'q_fish50', name: '바다의 전설', desc: '물고기 50마리 낚기', stat: 'fish', goal: 50, reward: { items: { rod_gold: 1 } } },
-    { id: 'q_farm100', name: '대농장주', desc: '작물 100개 수확하기', stat: 'harvest', goal: 100, reward: { items: { can_gold: 1 } } },
-    { id: 'q_col10', name: '수집가', desc: '도감 10칸 채우기', stat: 'col', goal: 10, reward: { items: { aquarium: 1 } } },
-    { id: 'q_col30', name: '박물관장', desc: '도감 30칸 채우기', stat: 'col', goal: 30, reward: { unlock: 'wings' } },
-    { id: 'q_daily10', name: '성실한 하루', desc: '일간 퀘스트 10개 깨기', stat: 'dailyDone', goal: 10, reward: { unlock: 'halo' } },
-    { id: 'q_daily50', name: '퀘스트 마스터', desc: '일간 퀘스트 50개 깨기', stat: 'dailyDone', goal: 50, reward: { items: { throne: 1 } } },
-    { id: 'q_weekly5', name: '한 주 한 주', desc: '주간 퀘스트 5개 깨기', stat: 'weeklyDone', goal: 5, reward: { items: { floor_star: 30 } } },
-    { id: 'q_rich', name: '부자', desc: '상점에 팔아서 5000코인 벌기', stat: 'earned', goal: 5000, reward: { items: { wall_gold: 30 } } },
-    { id: 'q_furn50', name: '인테리어 장인', desc: '가구 50개 놓기', stat: 'furniturePlaced', goal: 50, reward: { items: { piano: 1 } } },
-    { id: 'q_build100', name: '건축가', desc: '벽·창문·문 100개 세우기', stat: 'wallPlaced', goal: 100, reward: { items: { wall_candy: 30 } } },
-    { id: 'q_path100', name: '길 닦는 사람', desc: '길 블록 100개 깔기', stat: 'pathPlaced', goal: 100, reward: { items: { fountain: 1 } } },
-    { id: 'q_plant', name: '씨앗 뿌리기', desc: '씨앗 30개 심기', stat: 'plant', goal: 30, reward: { items: { scarecrow: 1 } } },
-    { id: 'q_water', name: '물 주기 달인', desc: '물 50번 주기', stat: 'water', goal: 50, reward: { coins: 200 } },
-    { id: 'q_produce30', name: '목장의 아침', desc: '달걀·우유·양털 30개 모으기', stat: 'produce', goal: 30, reward: { items: { pet_dog_spot: 1 } } },
-    { id: 'q_spend', name: '쇼핑왕', desc: '상점에서 3000코인 쓰기', stat: 'spent', goal: 3000, reward: { unlock: 'witch' } },
-    { id: 'q_chat100', name: '인싸', desc: '채팅 100번 하기', stat: 'chat', goal: 100, reward: { items: { telescope: 1 } } },
+    { id: 'q_fish1', name: '첫 손맛', desc: '물고기 1마리 낚기', stat: 'fish', goal: 1, reward: { coins: 50, exp: 20 } },
+    { id: 'q_farm1', name: '꼬마 농부', desc: '작물 3개 수확하기', stat: 'harvest', goal: 3, reward: { coins: 60, exp: 20 } },
+    { id: 'q_wood', name: '나무꾼', desc: '나무 10개 모으기 (나무 앞에서 X)', stat: 'wood', goal: 10, reward: { coins: 80, exp: 25 } },
+    { id: 'q_sign', name: '여긴 내 땅!', desc: '표지판 1개 세우기', stat: 'sign', goal: 1, reward: { coins: 40, exp: 15 } },
+    { id: 'q_path', name: '길을 만들자', desc: '길 블록 15개 깔기', stat: 'pathPlaced', goal: 15, reward: { coins: 60, exp: 25, items: { stone_path: 20 } } },
+    { id: 'q_style', name: '멋쟁이', desc: '꾸미기(C)에서 아바타 저장하기', stat: 'avatar', goal: 1, reward: { exp: 15, unlock: 'catears' } },
+    { id: 'q_stone', name: '채석장 일꾼', desc: '돌 10개 모으기 (바위 앞에서 X)', stat: 'stone', goal: 10, reward: { coins: 60, exp: 25, items: { torch: 6 } } },
+    { id: 'q_build', name: '내 집 마련', desc: '벽·창문·문 30개 세우기', stat: 'wallPlaced', goal: 30, reward: { coins: 200, exp: 60, items: { window: 2 } } },
+    { id: 'q_deco', name: '인테리어 디자이너', desc: '가구 10개 놓기', stat: 'furniturePlaced', goal: 10, reward: { coins: 200, exp: 60 } },
+    { id: 'q_chat', name: '수다쟁이', desc: '채팅 20번 하기', stat: 'chat', goal: 20, reward: { coins: 100, exp: 30, items: { teddy_big: 1 } } },
+    { id: 'q_sell', name: '장사꾼', desc: '상점에 팔아서 500코인 벌기', stat: 'earned', goal: 500, reward: { exp: 60, items: { gold: 3 } } },
+    { id: 'q_fish15', name: '낚시왕', desc: '물고기 15마리 낚기', stat: 'fish', goal: 15, reward: { exp: 80, unlock: 'crown' } },
+    { id: 'q_farm25', name: '풍년이다!', desc: '작물 25개 수확하기', stat: 'harvest', goal: 25, reward: { coins: 400, exp: 100 } },
+    { id: 'q_ranch', name: '목장 주인', desc: '동물에게 작물 5번 먹이기', stat: 'feed', goal: 5, reward: { coins: 150, exp: 50 } },
+    { id: 'q_produce', name: '신선한 선물', desc: '동물 선물(달걀·우유 등) 5개 모으기', stat: 'produce', goal: 5, reward: { coins: 100, exp: 50, items: { omelet: 2 } } },
+    { id: 'q_hunt', name: '사냥꾼', desc: '야생 동물 3마리 사냥하기 (활은 상점에서)', stat: 'hunt', goal: 3, reward: { coins: 200, exp: 60 } },
+    { id: 'q_cook1', name: '꼬마 요리사', desc: '요리 1번 하기 (가스레인지·모닥불 앞에서 E)', stat: 'cook', goal: 1, reward: { coins: 80, exp: 20 } },
+    { id: 'q_cook10', name: '요리 솜씨', desc: '요리 10번 하기', stat: 'cook', goal: 10, reward: { exp: 80, unlock: 'chef' } },
+    { id: 'q_cook50', name: '셰프의 길', desc: '요리 50번 하기', stat: 'cook', goal: 50, reward: { coins: 500, exp: 250, items: { fireplace: 1 } } },
+    { id: 'q_eat', name: '먹방', desc: '음식 5번 먹기 (요리를 들고 Space)', stat: 'eat', goal: 5, reward: { coins: 150, exp: 40 } },
+    { id: 'q_iron', name: '광부', desc: '철광석 10개 캐기 (동굴)', stat: 'iron', goal: 10, reward: { coins: 150, exp: 60 } },
+    { id: 'q_gold', name: '골드러시', desc: '금광석 5개 캐기', stat: 'gold', goal: 5, reward: { exp: 100, items: { statue: 1 } } },
+    { id: 'q_gem', name: '보석 사냥꾼', desc: '수정 3개 캐기', stat: 'gem', goal: 3, reward: { exp: 120, items: { crystal_lamp: 1 } } },
+    { id: 'q_mush', name: '버섯 따기', desc: '버섯 10개 따기 (숲에서 E)', stat: 'mushroom', goal: 10, reward: { coins: 120, exp: 40 } },
+    { id: 'q_berry', name: '산딸기 소녀', desc: '산딸기 15개 따기', stat: 'berry', goal: 15, reward: { exp: 60, unlock: 'flowercrown' } },
+    { id: 'q_wood100', name: '숲의 나무꾼', desc: '나무 100개 모으기', stat: 'wood', goal: 100, reward: { coins: 200, exp: 150, items: { windmill: 1 } } },
+    { id: 'q_hunt10', name: '숲의 사냥꾼', desc: '야생 동물 10마리 사냥하기', stat: 'hunt', goal: 10, reward: { exp: 150, unlock: 'horns' } },
+    { id: 'q_sit', name: '쉬어가요', desc: '의자·소파에 5번 앉기 (E)', stat: 'sit', goal: 5, reward: { coins: 60, exp: 20 } },
+    { id: 'q_tv', name: '텔레비전 보자', desc: 'TV 5번 켜기', stat: 'tv', goal: 5, reward: { exp: 60, items: { arcade: 1 } } },
+    { id: 'q_sleep', name: '꿀잠', desc: '침대에 3번 눕기 (E)', stat: 'lie', goal: 3, reward: { exp: 40, items: { music_box: 1 } } },
+    { id: 'q_trade1', name: '첫 거래', desc: '친구와 1번 거래하기 (접속자 목록 🤝)', stat: 'trade', goal: 1, reward: { coins: 100, exp: 30 } },
+    { id: 'q_trade10', name: '무역왕', desc: '친구와 10번 거래하기', stat: 'trade', goal: 10, reward: { exp: 150, items: { trophy: 1 } } },
+    { id: 'q_pet', name: '멍멍이 친구', desc: '펫 10번 쓰다듬기 (E)', stat: 'pet', goal: 10, reward: { exp: 60, items: { cat_tower: 1 } } },
+    { id: 'q_fish50', name: '바다의 전설', desc: '물고기 50마리 낚기', stat: 'fish', goal: 50, reward: { exp: 300, items: { rod_gold: 1 } } },
+    { id: 'q_farm100', name: '대농장주', desc: '작물 100개 수확하기', stat: 'harvest', goal: 100, reward: { exp: 300, items: { can_gold: 1 } } },
+    { id: 'q_col10', name: '수집가', desc: '도감 10칸 채우기', stat: 'col', goal: 10, reward: { exp: 150, items: { aquarium: 1 } } },
+    { id: 'q_col30', name: '박물관장', desc: '도감 30칸 채우기', stat: 'col', goal: 30, reward: { exp: 400, unlock: 'wings' } },
+    { id: 'q_daily10', name: '성실한 하루', desc: '일간 퀘스트 10개 깨기', stat: 'dailyDone', goal: 10, reward: { exp: 200, unlock: 'halo' } },
+    { id: 'q_daily50', name: '퀘스트 마스터', desc: '일간 퀘스트 50개 깨기', stat: 'dailyDone', goal: 50, reward: { exp: 500, items: { throne: 1 } } },
+    { id: 'q_weekly5', name: '한 주 한 주', desc: '주간 퀘스트 5개 깨기', stat: 'weeklyDone', goal: 5, reward: { exp: 300, items: { floor_star: 30 } } },
+    { id: 'q_rich', name: '부자', desc: '상점에 팔아서 5000코인 벌기', stat: 'earned', goal: 5000, reward: { exp: 400, items: { wall_gold: 30 } } },
+    { id: 'q_furn50', name: '인테리어 장인', desc: '가구 50개 놓기', stat: 'furniturePlaced', goal: 50, reward: { exp: 300, items: { piano: 1 } } },
+    { id: 'q_build100', name: '건축가', desc: '벽·창문·문 100개 세우기', stat: 'wallPlaced', goal: 100, reward: { exp: 300, items: { wall_candy: 30 } } },
+    { id: 'q_path100', name: '길 닦는 사람', desc: '길 블록 100개 깔기', stat: 'pathPlaced', goal: 100, reward: { exp: 300, items: { fountain: 1 } } },
+    { id: 'q_plant', name: '씨앗 뿌리기', desc: '씨앗 30개 심기', stat: 'plant', goal: 30, reward: { coins: 200, exp: 100, items: { scarecrow: 1 } } },
+    { id: 'q_water', name: '물 주기 달인', desc: '물 50번 주기', stat: 'water', goal: 50, reward: { coins: 200, exp: 80 } },
+    { id: 'q_produce30', name: '목장의 아침', desc: '동물 선물 30개 모으기', stat: 'produce', goal: 30, reward: { exp: 200, items: { pet_dog_spot: 1 } } },
+    { id: 'q_spend', name: '쇼핑왕', desc: '상점에서 3000코인 쓰기', stat: 'spent', goal: 3000, reward: { exp: 200, unlock: 'witch' } },
+    { id: 'q_chat100', name: '인싸', desc: '채팅 100번 하기', stat: 'chat', goal: 100, reward: { exp: 200, items: { telescope: 1 } } },
+    // v5
+    { id: 'q_lv5', name: '쑥쑥 성장', desc: '레벨 5 달성하기', stat: 'level', goal: 5, reward: { coins: 300 } },
+    { id: 'q_lv10', name: '마을의 기둥', desc: '레벨 10 달성하기', stat: 'level', goal: 10, reward: { coins: 800, items: { snowman: 1 } } },
+    { id: 'q_lv15', name: '베테랑', desc: '레벨 15 달성하기', stat: 'level', goal: 15, reward: { coins: 1500, unlock: 'piratehat' } },
+    { id: 'q_lv20', name: '전설의 주민', desc: '레벨 20 달성하기', stat: 'level', goal: 20, reward: { coins: 3000, unlock: 'jetpack' } },
+    { id: 'q_post', name: '마을 소식통', desc: '마을 게시판 건의함에 글 1개 쓰기', stat: 'post', goal: 1, reward: { coins: 100, exp: 30 } },
+    { id: 'q_newcrop', name: '새 작물 농부', desc: '토마토·옥수수·감자·수박 중 10개 수확', stat: 'newcrop', goal: 10, reward: { coins: 300, exp: 120 } },
+    { id: 'q_pets3', name: '펫 부자', desc: '펫 3마리 꺼내 두기', stat: 'petsOut', goal: 3, reward: { exp: 200, items: { pet_cat_calico: 1 } } },
+    { id: 'q_mvp', name: '금주의 MVP', desc: '금주의 MVP 1등 하기', stat: 'mvpWin', goal: 1, reward: { exp: 500, unlock: 'pirate' } },
   ];
 
   // ───────── 일간 / 주간 / 월간 퀘스트 ─────────
   // 일간: 3개, 깨면 레벨이 올라 더 어려운 퀘스트가 새로 나와요. 한국 시간 00시에 초기화
   // 주간: 4개, 일요일 00시에 초기화 / 월간: 3개, 다음 달 1일 00시에 초기화
+  // 보상: 코인 + 경험치. 아이템은 가끔 (일간 3레벨마다, 주간 절반, 월간 전부) — 모두 상점에서 못 사는 것
   const PQ_TEMPLATES = [
     { stat: 'fish', n: 3, coin: 40, t: '물고기 {n}마리 낚기' },
     { stat: 'harvest', n: 5, coin: 40, t: '작물 {n}개 수확하기' },
@@ -566,7 +696,7 @@
     { stat: 'stone', n: 10, coin: 30, t: '돌 {n}개 모으기' },
     { stat: 'cook', n: 2, coin: 50, t: '요리 {n}번 하기' },
     { stat: 'feed', n: 3, coin: 35, t: '동물에게 밥 {n}번 주기' },
-    { stat: 'produce', n: 2, coin: 40, t: '달걀·우유·양털 {n}개 받기' },
+    { stat: 'produce', n: 2, coin: 40, t: '동물 선물 {n}개 받기' },
     { stat: 'hunt', n: 2, coin: 45, t: '야생 동물 {n}마리 사냥하기' },
     { stat: 'chat', n: 5, coin: 20, t: '채팅 {n}번 하기' },
     { stat: 'earned', n: 150, coin: 40, t: '상점에 팔아서 {n}코인 벌기' },
@@ -577,12 +707,12 @@
     { stat: 'iron', n: 3, coin: 45, t: '철광석 {n}개 캐기' },
     { stat: 'eat', n: 1, coin: 30, t: '음식 {n}번 먹기' },
   ];
-  const DAILY_BONUS = [{ seed_pumpkin: 3 }, { seed_sunflower: 4 }, { torch: 6 }, { omelet: 1 }, { mushroom: 4 }, { iron: 3 }, { steak: 2 }, { seed_straw: 6 }];
+  const DAILY_BONUS = [{ mushroom: 4 }, { iron: 3 }, { gold: 1 }, { gem: 1 }, { omelet: 1 }, { steak: 2 }, { berry_tart: 1 }, { torch: 6 }];
   const WEEKLY_POOL = [{ piano: 1 }, { fireplace: 1 }, { cat_tower: 1 }, { arcade: 1 }, { telescope: 1 }, { floor_star: 20 }, { rug_rainbow: 20 },
-    { wall_candy: 20 }, { wall_rainbow: 20 }, { xmas_tree: 1 }, { music_box: 1 }, { aquarium: 1 }, { fountain: 1 }, { crystal_lamp: 1 }];
+    { wall_candy: 20 }, { wall_rainbow: 20 }, { xmas_tree: 1 }, { music_box: 1 }, { aquarium: 1 }, { fountain: 1 }, { crystal_lamp: 1 }, { snowman: 1 }, { teddy_big: 1 }];
   const MONTHLY_POOL = [{ unlock: 'santa' }, { unlock: 'tiara' }, { unlock: 'armor' }, { unlock: 'hanbok' }, { unlock: 'royal' }, { unlock: 'batwings' },
     { items: { throne: 1 } }, { items: { royal_bed: 1 } }, { items: { floor_gold: 30 } }, { items: { wall_gold: 30 } }, { items: { trophy: 1 } },
-    { items: { rod_gold: 1 } }, { items: { can_gold: 1 } }, { items: { pet_dog_spot: 1 } }, { items: { statue: 1 } }];
+    { items: { rod_gold: 1 } }, { items: { can_gold: 1 } }, { items: { pet_dog_spot: 1 } }, { items: { statue: 1 } }, { items: { pet_cat_calico: 1 } }];
   const PQ_SLOTS = { d: 3, w: 4, m: 3 };
   const PQ_NAMES = { d: '일간', w: '주간', m: '월간' };
 
@@ -606,18 +736,55 @@
     let goal, reward;
     if (type === 'd') {
       goal = Math.max(1, Math.round(tpl.n * (1 + 0.3 * lv)));
-      reward = { coins: Math.round(tpl.coin * (1 + 0.25 * lv)) };
+      reward = { coins: Math.round(tpl.coin * (1 + 0.25 * lv)), exp: Math.round(15 * (1 + 0.3 * lv)) };
       if (lv % 3 === 2) reward.items = Object.assign({}, DAILY_BONUS[Math.floor(strHash(seed + ':b') * DAILY_BONUS.length)]);
     } else if (type === 'w') {
       goal = tpl.n * 6;
-      reward = { coins: tpl.coin * 5, items: Object.assign({}, WEEKLY_POOL[Math.floor(strHash(seed + ':r') * WEEKLY_POOL.length)]) };
+      reward = { coins: tpl.coin * 5, exp: 120 };
+      if (strHash(seed + ':i') < 0.5) reward.items = Object.assign({}, WEEKLY_POOL[Math.floor(strHash(seed + ':r') * WEEKLY_POOL.length)]);
+      else reward.coins += 150;
     } else {
       goal = tpl.n * 20;
       const r = MONTHLY_POOL[Math.floor(strHash(seed + ':r') * MONTHLY_POOL.length)];
-      reward = Object.assign({ coins: tpl.coin * 15 }, r.items ? { items: Object.assign({}, r.items) } : {}, r.unlock ? { unlock: r.unlock } : {});
+      reward = Object.assign({ coins: tpl.coin * 15, exp: 400 }, r.items ? { items: Object.assign({}, r.items) } : {}, r.unlock ? { unlock: r.unlock } : {});
     }
     return { stat: tpl.stat, goal, desc: tpl.t.replace('{n}', goal), reward, lv };
   }
+
+  // ───────── 레벨 ─────────
+  // 다음 레벨까지 필요한 경험치: 처음엔 적고 갈수록 많이 필요해요 (Lv1→2: 20, Lv5→6: 263, Lv10→11: 796, Lv20→21: 2414)
+  const expToNext = (lv) => Math.round(20 * Math.pow(lv, 1.6));
+  function levelInfo(exp) {
+    let lv = 1, left = exp || 0;
+    while (left >= expToNext(lv) && lv < 99) { left -= expToNext(lv); lv++; }
+    return { lv, cur: left, need: expToNext(lv) };
+  }
+  // 활동 경험치 (stat 이름 → 1번당 경험치)
+  const EXP = { harvest: 2, fish: 4, wood: 1, stone: 1, iron: 3, gold: 5, gem: 8, cook: 5, produce: 3, hunt: 6, mushroom: 2, berry: 1, pinecone: 1, plant: 1, feed: 1, trade: 5 };
+  // 가방 칸: Lv.10 → 45칸, Lv.20 → 54칸
+  const invSize = (lv) => 36 + (lv >= 10 ? 9 : 0) + (lv >= 20 ? 9 : 0);
+  // 레벨마다 해금되는 것 (상점 아이템·요리·만들기·꾸미기·가방·펫 수)
+  function levelUnlocks(lv) {
+    const out = [];
+    for (const [, , list] of SHOP_TABS) for (const [id, , l] of list) if (l === lv && !out.includes(`🛒 ${ITEMS[id].name}`)) out.push(`🛒 ${ITEMS[id].name}`);
+    for (const r of COOK) if (r.lv === lv && lv > 1) out.push(`🍳 ${ITEMS[r.out].name}`);
+    for (const r of RECIPES) if (r.lv === lv) out.push(`🔨 ${ITEMS[r.out].name}`);
+    for (const list of [TOPS, ACCESSORIES, BACKS]) for (const c of list) if (c.lv === lv && lv > 1) out.push(`👗 ${c.name}`);
+    if (invSize(lv) > invSize(lv - 1)) out.push(`🎒 가방 ${invSize(lv)}칸`);
+    if (lv > 1 && maxPets(lv) > maxPets(lv - 1)) out.push(`🐾 펫 ${maxPets(lv)}마리까지`);
+    return out;
+  }
+  const shopLv = (id) => { for (const [, , list] of SHOP_TABS) for (const e of list) if (e[0] === id) return e[2] || 1; return 1; };
+
+  // ───────── 금주의 MVP (일요일 00시에 정해요) ─────────
+  const MVP_CATS = [
+    { id: 'money', name: '💰 부자 MVP', desc: '상점에 팔아서 번 코인', unit: '코인' },
+    { id: 'quest', name: '🏆 퀘스트 MVP', desc: '깬 퀘스트 수 (일간·주간·월간·업적)', unit: '개' },
+    { id: 'maker', name: '🌾 장인 MVP', desc: '수확·낚시·요리한 개수', unit: '개' },
+  ];
+  // stat → MVP 항목
+  const MVP_STAT = { earned: 'money', dailyDone: 'quest', weeklyDone: 'quest', monthlyDone: 'quest', questDone: 'quest', harvest: 'maker', fish: 'maker', cook: 'maker' };
+  const MVP_PRIZE = [{ coins: 1000, exp: 300 }, { coins: 500, exp: 150 }, { coins: 300, exp: 80 }];
 
   // 보상에 쓰인 꾸미기 아이템 출처 (상점 화면에 표시)
   const COSMETIC_SRC = {};
@@ -635,7 +802,12 @@
     return inv;
   }
   function countItem(inv, id) { return inv.reduce((s, it) => s + (it && it.id === id ? it.n : 0), 0); }
-  function addItem(inv, id, n) {
+  // extra: 칸에 같이 기억할 값 (예: 펫 이름 { pname }) — 있으면 합치지 않고 빈 칸에 따로 넣어요
+  function addItem(inv, id, n, extra) {
+    if (extra) {
+      for (let i = 0; i < inv.length && n > 0; i++) if (!inv[i]) { inv[i] = Object.assign({ id, n: 1 }, extra); n--; }
+      return n;
+    }
     const max = (ITEMS[id] && ITEMS[id].stack) || 99;
     for (const it of inv) {
       if (n <= 0) break;
@@ -763,29 +935,110 @@
     return { ground, objects, animals };
   }
 
-  // 숲(오른쪽)과 동굴(아래)을 만들고 마을과 이어요. 예전 맵을 넓힐 때도 그대로 써요.
-  // ground: H×W 배열, objects: { "x,y": obj } — 마을(x<64, y<48) 안은 길목 말고는 건드리지 않아요.
-  function expandWorld(ground, objects) {
-    const setG = (x, y, g) => { ground[y][x] = g; };
-    const setO = (x, y, o) => { if (o) objects[x + ',' + y] = o; else delete objects[x + ',' + y]; };
-    const getO = (x, y) => objects[x + ',' + y];
-
-    // ── 숲: x 64~99, y 0~47
+  // ───────── 지도 넓히기 ─────────
+  // 마을(x<64, y<48)은 건드리지 않아요 (길목·게시판 자리만).
+  // 오른쪽 위(x≥64, y<48) + 가운데(y 48~79) = 집 짓는 땅 / 맨 아래(y≥80) = 생산 구역: 왼쪽 동굴(x<50), 오른쪽 나무꾼의 숲
+  const NATURAL = new Set(['tree', 'pine', 'stump', 'sapling', 'mushroom_wild', 'sprout', 'bush', 'bush_berry', 'flower', 'rock', 'pebble',
+    'ore_iron', 'ore_gold', 'crystal', 'cave_wall', 'campfire', 'log_seat', 'torch']);
+  function worldTools(ground, objects) {
+    return {
+      setG: (x, y, g) => { ground[y][x] = g; },
+      setO: (x, y, o) => { if (o) objects[x + ',' + y] = o; else delete objects[x + ',' + y]; },
+      getO: (x, y) => objects[x + ',' + y],
+    };
+  }
+  // 오른쪽 위: 집 짓는 땅 (keep = 예전 숲을 바꿀 때 사람이 놓은 물건은 남겨요)
+  function genTopRight(ground, objects, keep) {
+    const { setG, setO, getO } = worldTools(ground, objects);
     for (let y = 0; y < OH; y++) for (let x = OW; x < W; x++) {
-      setG(x, y, 'forest'); setO(x, y, null);
-      if (y < 2 || x >= W - 2 || y >= OH - 2) setO(x, y, { t: 'pine', fixed: 1 });
+      const o = getO(x, y);
+      if (!keep) { setG(x, y, 'grass'); setO(x, y, null); continue; }
+      if (o && (NATURAL.has(o.t) || o.fixed)) setO(x, y, null);
+      if (ground[y][x] === 'forest') setG(x, y, 'grass');
     }
-    // 숲속 연못
-    for (let y = 4; y < 18; y++) for (let x = 82; x < 96; x++) {
-      const dx = (x + 0.5 - 89) / 5, dy = (y + 0.5 - 10) / 3.5, d = dx * dx + dy * dy;
+    if (!keep) {
+      for (let y = 5; y < 16; y++) for (let x = 82; x < 96; x++) {
+        const dx = (x + 0.5 - 89) / 4, dy = (y + 0.5 - 10) / 3, d = dx * dx + dy * dy;
+        if (d < 1) setG(x, y, 'water'); else if (d < 1.45) setG(x, y, 'sand');
+      }
+    }
+    for (let y = 0; y < OH; y++) for (let x = OW; x < W; x++)
+      if ((y < 2 || x >= W - 2) && !getO(x, y)) setO(x, y, { t: 'tree', fixed: 1 });
+    for (let x = OW - 2; x < W - 2; x++) if (!getO(x, 24) && ground[24][x] === 'grass') setG(x, 24, 'path');
+    for (let y = 2; y < OH; y++) for (let x = OW; x < W - 2; x++) {
+      if (getO(x, y) || ground[y][x] !== 'grass' || Math.abs(y - 24) <= 1) continue;
+      const r = hash(x * 13, y * 17);
+      if (r < 0.012) setO(x, y, { t: 'tree' }); else if (r > 0.96) setO(x, y, { t: 'flower' });
+    }
+    // 마을 → 오른쪽 길목
+    for (let y = 23; y <= 25; y++) for (let x = OW - 2; x < OW; x++) { setO(x, y, null); setG(x, y, y === 24 ? 'path' : 'grass'); }
+  }
+  // 가운데: 집 짓는 들판 (처음 만들 때만)
+  function genMeadow(ground, objects) {
+    const { setG, setO } = worldTools(ground, objects);
+    for (let y = OH; y < CY; y++) for (let x = 0; x < W; x++) {
+      setG(x, y, 'grass'); setO(x, y, null);
+      if (x < 2 || x >= W - 2) { setO(x, y, { t: 'tree', fixed: 1 }); continue; }
+      const r = hash(x * 7 + 5, y * 11 + 3);
+      if (r < 0.008) setO(x, y, { t: 'tree' }); else if (r > 0.96) setO(x, y, { t: 'flower' });
+    }
+    for (let y = OH + 2; y < CY - 2; y++) for (let x = 4; x < 24; x++) {
+      const dx = (x + 0.5 - 12) / 4.5, dy = (y + 0.5 - 64) / 2.8, d = dx * dx + dy * dy;
+      if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.45) { setG(x, y, 'sand'); setO(x, y, null); }
+    }
+    for (let y = OH - 2; y < CY; y++) { setG(31, y, 'path'); setO(31, y, null); }
+    setO(33, OH + 1, { t: 'sign', text: '🏡 마음껏 집을 지어요!' });
+    for (let y = OH - 2; y < OH; y++) for (let x = 20; x <= 42; x++) { setO(x, y, null); setG(x, y, x === 31 ? 'path' : 'grass'); }
+  }
+  // 맨 아래: 생산 구역 (왼쪽 동굴, 오른쪽 나무꾼의 숲). 다시 자라니까 너무 크지 않게.
+  function genBottom(ground, objects) {
+    const { setG, setO, getO } = worldTools(ground, objects);
+    for (let y = CY; y < H; y++) for (let x = 0; x < W; x++) {
+      if (x < BX) { setG(x, y, 'cave'); setO(x, y, { t: 'cave_wall', fixed: 1 }); } else { setG(x, y, 'forest'); setO(x, y, null); }
+    }
+    // ── 동굴 (x 0~49)
+    const corridorY = CY + 16;
+    const open = (x, y) => {
+      if (x < 4 || x >= BX - 4 || y < CY + 4 || y >= H - 3) return false;
+      if (Math.abs(y - corridorY) <= 1 || Math.abs(x - 31) <= 1) return true;
+      return hash(Math.floor(x / 3) * 7 + 3, Math.floor(y / 3) * 13 + 1) > 0.2;
+    };
+    for (let y = CY; y < H; y++) for (let x = 0; x < BX; x++) if (open(x, y)) setO(x, y, null);
+    for (let y = CY - 2; y < CY + 5; y++) for (let x = 29; x <= 33; x++) { setO(x, y, null); if (y < CY) setG(x, y, 'path'); }
+    for (let y = CY + 4; y < H - 3; y++) for (let x = 30; x < BX - 3; x++) {
+      const dx = (x + 0.5 - 39) / 4.5, dy = (y + 0.5 - (CY + 24)) / 2.5, d = dx * dx + dy * dy;
+      if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.6 && getO(x, y) && getO(x, y).t === 'cave_wall') setO(x, y, null);
+    }
+    for (let y = CY + 4; y < H - 3; y++) for (let x = 4; x < BX - 4; x++) {
+      if (getO(x, y) || ground[y][x] !== 'cave') continue;
+      if (Math.abs(y - corridorY) <= 1 || (Math.abs(x - 31) <= 1 && y < corridorY)) continue;
+      const depth = (y - CY) / (H - CY);
+      const r = hash(x * 5 + 11, y * 9 + 7);
+      if (r < 0.09) setO(x, y, { t: 'rock' });
+      else if (r < 0.15) setO(x, y, { t: 'ore_iron' });
+      else if (r < 0.16 + 0.03 * depth) setO(x, y, { t: 'ore_gold' });
+      else if (r < 0.19 + 0.02 * depth) setO(x, y, depth > 0.4 ? { t: 'crystal' } : { t: 'rock' });
+    }
+    for (let x = 6; x < BX - 5; x += 7) if (!getO(x, corridorY - 1)) setO(x, corridorY - 1, { t: 'torch', fixed: 1 });
+    for (let y = CY + 2; y < corridorY; y += 5) setO(29, y, { t: 'torch', fixed: 1 });
+    setO(33, CY + 1, { t: 'sign', text: '⛏ 동굴 (바위·광석 X로 캐요)' });
+    // 동굴 ↔ 숲 굴
+    for (let y = corridorY - 1; y <= corridorY + 1; y++) for (let x = BX - 5; x < BX + 2; x++) { setO(x, y, null); if (x < BX) setG(x, y, 'cave'); }
+    // ── 나무꾼의 숲 (x 50~99)
+    const EX = 75;
+    for (let y = CY; y < H; y++) for (let x = BX; x < W; x++) {
+      if (x >= W - 2 || y >= H - 2 || (y < CY + 2 && Math.abs(x - EX) > 2)) setO(x, y, { t: 'pine', fixed: 1 });
+    }
+    for (let y = CY + 4; y < CY + 17; y++) for (let x = 82; x < 96; x++) {
+      const dx = (x + 0.5 - 89) / 4.5, dy = (y + 0.5 - (CY + 10)) / 3, d = dx * dx + dy * dy;
       if (d < 1) setG(x, y, 'water'); else if (d < 1.5) setG(x, y, 'sand');
     }
-    const camp = { x: 80, y: 26 };
-    for (let x = OW - 2; x <= camp.x; x++) setG(x, 24, 'path');
-    for (let y = 15; y <= 24; y++) setG(camp.x, y, 'path');
-    const isPath = (x, y) => ground[y][x] === 'path' || ground[y][x] === 'sand' || ground[y][x] === 'water';
-    for (let y = 2; y < OH - 2; y++) for (let x = OW; x < W - 2; x++) {
-      if (isPath(x, y)) continue;
+    const camp = { x: 66, y: CY + 18 };
+    for (let y = CY - 8; y <= camp.y; y++) if (!getO(EX, y) || y >= CY) { setG(EX, y, 'path'); if (y >= CY) setO(EX, y, null); }
+    for (let x = camp.x; x <= EX; x++) setG(x, camp.y, 'path');
+    for (let y = CY + 2; y < H - 2; y++) for (let x = BX; x < W - 2; x++) {
+      const g = ground[y][x];
+      if (g === 'path' || g === 'sand' || g === 'water' || getO(x, y)) continue;
       if (Math.hypot(x - camp.x, y - camp.y) < 4.2) continue;
       let nearPath = false;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ground[y + dy] && ground[y + dy][x + dx] === 'path') nearPath = true;
@@ -800,73 +1053,69 @@
     setO(camp.x, camp.y, { t: 'campfire', fixed: 1 });
     setO(camp.x - 2, camp.y, { t: 'log_seat', fixed: 1 }); setO(camp.x + 2, camp.y, { t: 'log_seat', fixed: 1 });
     setO(camp.x, camp.y + 2, { t: 'log_seat', fixed: 1 });
-    setO(OW + 1, 23, { t: 'sign', text: '🌲 나무꾼의 숲 → (나무 X, 버섯·산딸기 E)' });
     setO(camp.x + 1, camp.y - 2, { t: 'sign', text: '🔥 모닥불 (E로 요리)' });
-
-    // ── 집 짓는 들판: x 0~99, y 48~79 (넓은 빈 풀밭)
-    for (let y = OH; y < CY; y++) for (let x = 0; x < W; x++) {
-      setG(x, y, 'grass'); setO(x, y, null);
-      if (x < 2 || x >= W - 2) { setO(x, y, { t: 'tree', fixed: 1 }); continue; }
-      const r = hash(x * 7 + 5, y * 11 + 3);
-      if (r < 0.008) setO(x, y, { t: 'tree' });
-      else if (r > 0.96) setO(x, y, { t: 'flower' });
+    setO(EX + 2, CY + 2, { t: 'sign', text: '🌲 나무꾼의 숲 (나무 X, 버섯·산딸기 E)' });
+    if (!getO(EX + 2, CY - 3)) setO(EX + 2, CY - 3, { t: 'sign', text: '🌲 아래로 가면 나무꾼의 숲' });
+    if (!getO(33, CY - 3)) setO(33, CY - 3, { t: 'sign', text: '⛏ 아래로 가면 동굴' });
+  }
+  // 마을 한가운데 게시판 (빈 칸을 찾아서)
+  function placeBoard(ground, objects) {
+    if (Object.values(objects).some((o) => o.t === 'notice_board')) return;
+    for (let r = 0; r <= 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = 34 + dx, y = 26 + dy;
+      if (objects[x + ',' + y] || ground[y][x] === 'water' || ground[y][x] === 'path') continue;
+      objects[x + ',' + y] = { t: 'notice_board' };
+      return;
     }
-    // 들판 작은 연못 (낚시용)
-    for (let y = OH + 2; y < CY - 2; y++) for (let x = 4; x < 24; x++) {
-      const dx = (x + 0.5 - 12) / 4.5, dy = (y + 0.5 - 64) / 2.8, d = dx * dx + dy * dy;
-      if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.45) { setG(x, y, 'sand'); setO(x, y, null); }
-    }
-    for (let y = OH - 2; y < CY; y++) { setG(31, y, 'path'); setO(31, y, null); }
-    setO(33, OH + 1, { t: 'sign', text: '🏡 집 짓는 들판 — 마음껏 지어요!' });
-    setO(33, CY - 3, { t: 'sign', text: '⛏ 아래로 가면 동굴' });
-    // 마을 → 들판 길목 (마을 아래쪽 나무 넓게 치우기)
-    for (let y = OH - 2; y < OH; y++) for (let x = 20; x <= 42; x++) { setO(x, y, null); setG(x, y, x === 31 ? 'path' : 'grass'); }
-    // 숲 → 들판 길목
-    for (let y = OH - 2; y < OH; y++) for (let x = 72; x <= 90; x++) { setO(x, y, null); setG(x, y, 'forest'); }
-
-    // ── 동굴: y 80~111 (전부 바위벽으로 채운 뒤 안쪽을 파요)
-    for (let y = CY; y < H; y++) for (let x = 0; x < W; x++) { setG(x, y, 'cave'); setO(x, y, { t: 'cave_wall', fixed: 1 }); }
-    const corridorY = CY + 16;
-    const open = (x, y) => {
-      if (x < 4 || x >= W - 4 || y < CY + 4 || y >= H - 3) return false;
-      if (Math.abs(y - corridorY) <= 1 || Math.abs(x - 31) <= 1) return true;
-      const cx = Math.floor(x / 3), cy = Math.floor(y / 3);
-      return hash(cx * 7 + 3, cy * 13 + 1) > 0.2;
-    };
-    for (let y = CY; y < H; y++) for (let x = 0; x < W; x++) if (open(x, y)) setO(x, y, null);
-    // 입구 굴 (들판 가운데 길에서 이어져요)
-    for (let y = CY - 2; y < CY + 5; y++) for (let x = 29; x <= 33; x++) {
-      if (y < CY) { setO(x, y, null); setG(x, y, 'path'); } else setO(x, y, null);
-    }
-    // 지하 호수
-    for (let y = CY + 4; y < H - 3; y++) for (let x = 60; x < 92; x++) {
-      const dx = (x + 0.5 - 76) / 7, dy = (y + 0.5 - (CY + 24)) / 3.5;
-      if (dx * dx + dy * dy < 1) { setG(x, y, 'water'); setO(x, y, null); }
-      else if (dx * dx + dy * dy < 1.6 && getO(x, y) && getO(x, y).t === 'cave_wall') setO(x, y, null);
-    }
-    // 바위와 광석 (깊을수록 귀한 광석)
-    for (let y = CY + 4; y < H - 3; y++) for (let x = 4; x < W - 4; x++) {
-      if (getO(x, y) || ground[y][x] !== 'cave') continue;
-      if (Math.abs(y - corridorY) <= 1 || (Math.abs(x - 31) <= 1 && y < corridorY)) continue;
-      const depth = (y - CY) / (H - CY);
-      const r = hash(x * 5 + 11, y * 9 + 7);
-      if (r < 0.08) setO(x, y, { t: 'rock' });
-      else if (r < 0.13) setO(x, y, { t: 'ore_iron' });
-      else if (r < 0.13 + 0.01 + 0.025 * depth) setO(x, y, { t: 'ore_gold' });
-      else if (r < 0.165 + 0.02 * depth) setO(x, y, depth > 0.4 ? { t: 'crystal' } : { t: 'rock' });
-    }
-    // 횃불
-    for (let x = 6; x < W - 6; x += 7) if (!getO(x, corridorY - 1)) setO(x, corridorY - 1, { t: 'torch', fixed: 1 });
-    for (let y = CY + 2; y < corridorY; y += 5) setO(29, y, { t: 'torch', fixed: 1 });
-    setO(33, CY + 1, { t: 'sign', text: '⛏ 동굴 (바위·광석 X로 캐요)' });
-
-    // ── 마을 → 숲 길목 (오른쪽 가장자리 나무 치우기)
-    for (let y = 23; y <= 25; y++) for (let x = OW - 2; x < OW; x++) { setO(x, y, null); setG(x, y, y === 24 ? 'path' : 'grass'); }
+  }
+  // 처음 만들 때 / 예전 맵(64×48)을 넓힐 때
+  function expandWorld(ground, objects) {
+    genTopRight(ground, objects, false);
+    genMeadow(ground, objects);
+    genBottom(ground, objects);
+    placeBoard(ground, objects);
+  }
+  // 버전 4 맵 → 5: 오른쪽 위 숲을 집 짓는 땅으로, 아래쪽을 동굴+숲으로 다시 만들어요 (지은 건물은 그대로)
+  function upgradeV4(ground, objects) {
+    genTopRight(ground, objects, true);
+    genBottom(ground, objects);
+    placeBoard(ground, objects);
   }
 
+  // ───────── 📢 업데이트 소식 (마을 게시판에 자동으로 공지돼요) ─────────
+  // 새 업데이트를 할 때 맨 앞에 하나 추가하면, 서버가 켜질 때 채팅으로 알리고 게시판 버튼에 🆕 가 떠요.
+  const UPDATES = [
+    {
+      v: 'v5', date: '2026-11-11', title: '레벨 · 마을 게시판 · 금주의 MVP 업데이트',
+      items: [
+        '⭐ 레벨이 생겼어요! 수확·낚시·채집·요리·사냥·퀘스트로 경험치를 모아요 (처음엔 쉽게, 갈수록 어렵게)',
+        '🔓 레벨이 오르면 새 작물·동물·펫·가구·옷·요리법이 열리고, Lv.10·20에 가방이 45·54칸으로 늘어나요',
+        '📌 마을 한가운데에 게시판이 생겼어요: 업데이트 소식, 건의함(원하는 업데이트를 적어 주세요!), 금주의 MVP',
+        '🏅 금주의 MVP: 💰 부자 · 🏆 퀘스트 · 🌾 장인(수확·낚시·요리). 일요일 0시에 발표, 1~3등은 우편함으로 상품, 1등은 👑',
+        '📮 우편함: 가방이 꽉 차서 못 받은 보상과 MVP 상품은 퀘스트 창 맨 위에서 받아요',
+        '🗺️ 지도 정리: 오른쪽 위도 집 짓는 땅이 됐고, 동굴(왼쪽)과 나무꾼의 숲(오른쪽)은 맨 아래로 모았어요',
+        '🌽 새 작물 토마토·옥수수·감자·수박, 🦆 새 동물 오리·염소·돼지, 🐱 새 펫 고양이·검은 고양이·토끼',
+        '🍕 새 요리 9가지 (토마토 수프, 콘수프, 감자튀김, 피자, 트러플 파스타 등)',
+        '🛋️ 가구 20여 가지, 🧱 벽지 5가지, 바닥 6가지, 👗 옷·모자·등 장식 11가지 추가',
+        '🐾 펫을 여러 마리 기를 수 있어요 (따라다니는 건 1마리). 가방에 넣었다 꺼내도 이름을 기억해요',
+        '↻ 돌린 의자·소파·침대 등이 옆모습·뒷모습으로 서 있는 것처럼 보여요',
+        '🍽️ 조리대·싱크대·테이블 위에 그릇 선반·양념 선반·전자레인지·커피머신 등을 올려놓을 수 있어요',
+        '🎁 퀘스트 보상은 주로 코인 + 경험치, 아이템은 가끔(상점에서 못 사는 것만)',
+        '🔴 퀘스트 알림 숫자가 남아 있던 문제를 고쳤어요 (도감 보상은 도감 버튼에 따로 표시)',
+      ],
+    },
+    {
+      v: 'v4', date: '2026-11-10', title: '요리 · 도감 · 거래 · 강아지 업데이트',
+      items: ['🍳 요리', '📖 도감', '📅 일간·주간·월간 퀘스트', '🤝 거래', '🐶 강아지', '📦 상자', '↻ 가구 회전', '🗺️ 미니맵'],
+    },
+  ];
+
   const SHARED = {
-    TILE, OW, OH, W, H, CY, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
-    hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, MAX_PETS, zoneAt,
+    UPDATES,
+    TILE, OW, OH, W, H, CY, BX, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
+    hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, maxPets, zoneAt,
+    expToNext, levelInfo, EXP, invSize, levelUnlocks, shopLv, MVP_CATS, MVP_STAT, MVP_PRIZE, NATURAL, upgradeV4,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,
     SKINS, HAIR_STYLES, HAIR_COLORS, EYES, TOPS, CLOTH, ACCESSORIES, BACKS, COSMETICS, COSMETIC_SRC, isLocked, FREE_ACC,

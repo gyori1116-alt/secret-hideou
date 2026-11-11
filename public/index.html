@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -51,6 +51,10 @@
     #top { top: 12px; left: 12px; padding: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100vw - 230px); }
     #coins { font-size: 15px; padding: 0 8px; min-width: 80px; }
     #top .btn { font-size: 12px; position: relative; }
+    #lvBox { display: flex; align-items: center; gap: 6px; background: #fff6d6; }
+    .lvbar { display: inline-block; width: 60px; height: 8px; border: 2px solid var(--ink); background: #eee3d5; }
+    .lvbar i { display: block; height: 100%; width: 0; background: #ffd34d; }
+    .badge { display: none; position: absolute; top: -9px; right: -9px; background: #e53935; color: #fff; border: 2px solid var(--ink); border-radius: 10px; font-size: 10px; min-width: 18px; padding: 0 4px; line-height: 14px; text-shadow: none; }
     #qBadge { display: none; position: absolute; top: -9px; right: -9px; background: #e53935; color: #fff; border: 2px solid var(--ink); border-radius: 10px; font-size: 10px; min-width: 18px; padding: 0 4px; line-height: 14px; text-shadow: none; }
 
     /* 오른쪽 위: 미니맵 + 접속자 */
@@ -162,6 +166,18 @@
     .chesthead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; flex-wrap: wrap; }
     .chesthead .btn { font-size: 12px; padding: 3px 8px; }
     .chestgrid .slot { background: #f6ead8; border-color: #b88252; }
+    .rw-unlocks { width: 100%; display: grid; gap: 6px; font-size: 13px; }
+    .rw-unlocks div { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+    .newslist { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
+    .row.news { align-items: flex-start; }
+    .postbox { display: flex; gap: 8px; align-items: stretch; }
+    .postbox textarea { font-size: 13px; }
+    .posttext { margin-top: 3px; white-space: pre-wrap; word-break: break-all; user-select: text; }
+    .mvpgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    @media (max-width: 560px) { .mvpgrid { grid-template-columns: 1fr; } }
+    .mvpcard { background: #fff; border: 3px solid #f2c230; padding: 8px; font-size: 12px; display: grid; gap: 4px; align-content: start; }
+    .mvpcard.last { border-color: #e8d9c6; }
+    .mvpcard ol { margin: 0; padding-left: 4px; list-style: none; display: grid; gap: 2px; }
     .petbox { display: flex; gap: 14px; align-items: flex-start; font-size: 13px; }
     .petbox .grow { flex: 1; }
     .petpic canvas { width: 96px; height: 96px; background: #8fd16f; border: 3px solid var(--ink); }
@@ -186,11 +202,13 @@
   <canvas id="game"></canvas>
 
   <div id="top" class="panel hidden">
+    <button id="lvBox" class="btn" data-open="level"><b id="lvText">Lv.1</b><span class="lvbar"><i id="lvBar"></i></span></button>
     <span id="coins">💰 0</span>
     <button class="btn" data-open="bag">🎒 가방 <small>I</small></button>
     <button class="btn" data-open="avatar">👗 꾸미기 <small>C</small></button>
-    <button class="btn" data-open="quests">📜 퀘스트 <small>Q</small><span id="qBadge"></span></button>
-    <button class="btn" data-open="col">📖 도감 <small>K</small></button>
+    <button class="btn" data-open="quests">📜 퀘스트 <small>Q</small><span id="qBadge" class="badge"></span></button>
+    <button class="btn" data-open="col">📖 도감 <small>K</small><span id="cBadge" class="badge"></span></button>
+    <button class="btn" data-open="board">📌 게시판<span id="bBadge" class="badge">N</span></button>
     <button class="btn" data-open="help">❓ 조작법</button>
   </div>
   <div id="side" class="hidden">
@@ -249,8 +267,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=7"></script>
-  <script src="draw.js?v=7"></script>
-  <script src="client.js?v=7"></script>
+  <script src="shared.js?v=8"></script>
+  <script src="draw.js?v=8"></script>
+  <script src="client.js?v=8"></script>
 </body>
 </html>

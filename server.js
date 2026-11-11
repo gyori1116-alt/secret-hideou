@@ -46,6 +46,8 @@ async function saveData(key, obj) {
 // ───────── 월드 ─────────
 let world = null;           // { ground: string[][], objects: Map<"x,y", obj> }
 let chests = new Map();     // "x,y" -> { items: [], owner, locked } (상자 안 물건은 서버만 알고, 연 사람에게만 보내요)
+let board = { posts: [], nextId: 1, mvpWeek: null, lastMvp: null };  // 마을 게시판 (건의함 + 금주의 MVP)
+let boardDirty = false;
 let profiles = {};          // 이름(소문자) -> 프로필
 let worldDirty = false, profilesDirty = false;
 const pending = new Map();  // 바뀐 타일 (모두에게 보낼 것)
@@ -100,6 +102,19 @@ const pubAnimal = (a) => {
   return r;
 };
 const isOwner = (p, a) => !!a.owner && a.owner.toLowerCase() === p.key;
+const myPets = (p) => [...animals.values()].filter((a) => S.ANIMALS[a.kind].pet && isOwner(p, a));
+// 따라오는 펫은 1마리만: a 를 따라오게 하고 나머지는 그 자리에서 지내게 (a = null 이면 모두 집)
+function setFollower(p, a) {
+  for (const b of myPets(p)) if (b !== a && b.mode === 'follow') { b.mode = 'home'; b.hx = b.x; b.hy = b.y; }
+  if (a) a.mode = 'follow';
+  animalsDirty = worldDirty = true;
+}
+// 펫을 가방에 넣어요 (이름 기억)
+function bagPet(p, a) {
+  animals.delete(a.id);
+  animalsDirty = worldDirty = true;
+  give(p, S.ANIMALS[a.kind].item, 1, true, { pname: a.pname });
+}
 const ownerOnline = (a) => (a.owner ? Object.values(players).find((q) => q.key === a.owner.toLowerCase()) : null);
 
 // ───────── 서버 ─────────
@@ -118,7 +133,10 @@ let stateDirty = false, nextTradeId = 1;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const DIRS = new Set(['up', 'down', 'left', 'right']);
+const lvOf = (pr) => S.levelInfo(pr.exp || 0).lv;
+const isMvp = (k) => !!(board.lastMvp && Object.values(board.lastMvp.cats || {}).some((list) => list[0] && list[0].name.toLowerCase() === k));
 const pub = (p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, held: p.held, pose: p.pose,
+  lv: lvOf(p.prof), mvp: isMvp(p.key),
   fishing: p.fishing ? { x: p.fishing.x, y: p.fishing.y } : null });
 
 function pushChat(msg) {
@@ -144,8 +162,20 @@ function ensureProfile(pr) {
   pr.unlocked = pr.unlocked || [];
   for (const id of S.FREE_ACC) if (!pr.unlocked.includes(id)) pr.unlocked.push(id);
   if (!Array.isArray(pr.inv)) pr.inv = S.starterInventory();
-  while (pr.inv.length < S.INV_SIZE) pr.inv.push(null);
   pr.inv = pr.inv.map((it) => (it && S.ITEMS[it.id] && it.n > 0 ? it : null));
+  // 레벨: 처음이면 지금까지 한 활동으로 시작 경험치를 계산해 줘요
+  if (!isNum(pr.exp)) {
+    const st = pr.stats;
+    let e = (pr.claimed.length || 0) * 30;
+    for (const [k, v] of Object.entries(S.EXP)) e += (st[k] || 0) * v;
+    pr.exp = Math.round(e);
+  }
+  pr.stats.level = lvOf(pr);
+  while (pr.inv.length < S.invSize(pr.stats.level)) pr.inv.push(null);
+  // 예전 "못 받은 보상" → 우편함
+  pr.mail = pr.mail || [];
+  if (pr.recover && Object.keys(pr.recover).length) pr.mail.push({ title: '📮 예전에 가방이 꽉 차서 못 받은 보상', items: pr.recover });
+  delete pr.recover;
   if (!pr.col) {
     pr.col = {};
     for (const it of pr.inv) if (it && S.COL_INDEX[it.id]) pr.col[it.id] = 1;
@@ -185,7 +215,7 @@ function sendMe(p) {
   const per = S.periods(Date.now());
   p.socket.emit('me', {
     coins: pr.coins, inv: pr.inv, stats: pr.stats, claimed: pr.claimed, unlocked: pr.unlocked, avatar: pr.avatar,
-    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, recover: pr.recover || null, ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
+    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, mail: pr.mail, exp: pr.exp, wk: curWk(pr), ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
   });
   updateHeld(p);
   profilesDirty = true;
@@ -203,8 +233,8 @@ function collect(p, k) {
   pr.stats.col = Object.keys(pr.col).length;
   p.socket.emit('colNew', { key: k, name: S.colName(k) });
 }
-function give(p, id, n, noCol) {
-  const left = S.addItem(p.prof.inv, id, n);
+function give(p, id, n, noCol, extra) {
+  const left = S.addItem(p.prof.inv, id, n, extra);
   if (left > 0) toast(p.socket, '가방이 가득 찼어요! 🎒');
   if (!noCol && n - left > 0) collect(p, id);
 }
@@ -216,11 +246,40 @@ function room(p, items, remove) {
   return false;
 }
 const natGround = (x, y) => ({ cave: 'cave', forest: 'forest' })[S.zoneAt(x, y)] || 'grass';
-const stat = (p, k, n = 1) => { p.prof.stats[k] = (p.prof.stats[k] || 0) + n; };
+// 이번 주 MVP 기록 (주가 바뀌면 0부터)
+function curWk(pr) {
+  const k = S.periods(Date.now()).w.key;
+  if (!pr.wk || pr.wk.key !== k) pr.wk = { key: k, money: 0, quest: 0, maker: 0 };
+  return pr.wk;
+}
+// 통계 올리기 + 활동 경험치 + 금주의 MVP 기록
+function stat(p, k, n = 1) {
+  const pr = p.prof;
+  pr.stats[k] = (pr.stats[k] || 0) + n;
+  if (S.MVP_STAT[k]) curWk(pr)[S.MVP_STAT[k]] += n;
+  if (S.EXP[k]) addExp(p, S.EXP[k] * n);
+}
+// 경험치 → 레벨업 (가방 칸 늘리기, 해금 알림)
+function addExp(p, n) {
+  const pr = p.prof;
+  if (!n) return;
+  const before = lvOf(pr);
+  pr.exp = (pr.exp || 0) + n;
+  const after = lvOf(pr);
+  if (after <= before) return;
+  pr.stats.level = after;
+  while (pr.inv.length < S.invSize(after)) pr.inv.push(null);
+  const unlocks = [];
+  for (let l = before + 1; l <= after; l++) unlocks.push(...S.levelUnlocks(l));
+  p.socket.emit('levelUp', { lv: after, unlocks });
+  io.to(ROOM).emit('playerUpdate', { id: p.id, avatar: p.avatar, lv: after, mvp: isMvp(p.key) });
+  sys(`🎉 ${p.name} 님이 레벨 ${after}(으)로 올랐어요!`);
+}
 // 보상 주기 + 받은 것 화면에 보여주기
 function grant(p, title, rw) {
-  const shown = { title, coins: rw.coins || 0, items: rw.items || {}, unlock: null, converted: 0 };
+  const shown = { title, coins: rw.coins || 0, exp: rw.exp || 0, items: rw.items || {}, unlock: null, converted: 0 };
   if (rw.coins) p.prof.coins += rw.coins;
+  if (rw.exp) setTimeout(() => { addExp(p, rw.exp); sendMe(p); }, 50);
   if (rw.items) for (const [iid, n] of Object.entries(rw.items)) give(p, iid, n, true);
   if (rw.unlock) {
     if (p.prof.unlocked.includes(rw.unlock)) { p.prof.coins += 300; shown.converted = 300; }
@@ -246,18 +305,22 @@ function nearStation(p) {
   const fx = Math.floor(p.x / TILE), fy = Math.floor(p.y / TILE);
   for (let y = fy - 3; y <= fy + 3; y++) for (let x = fx - 3; x <= fx + 3; x++) {
     const o = inMap(x, y) && getO(x, y);
-    if (o && S.OBJ[o.t] && S.OBJ[o.t].cook && inReach(p, x, y, TILE * 2)) return true;
+    const cook = o && ((S.OBJ[o.t] && S.OBJ[o.t].cook) || (o.top && S.OBJ[o.top].cook));
+    if (cook && inReach(p, x, y, TILE * 2)) return true;
   }
   return false;
 }
 // ───────── 상자 ─────────
 function getChest(x, y) {
   const k = key(x, y), o = getO(x, y);
-  if (!o || o.t !== 'chest') return null;
+  const size = o && S.OBJ[o.t] && S.OBJ[o.t].chest;
+  if (!size) return null;
   let c = chests.get(k);
-  if (!c) { c = { items: new Array(S.CHEST_SIZE).fill(null), owner: null, locked: false }; chests.set(k, c); }
+  if (!c) { c = { items: new Array(size).fill(null), owner: null, locked: false }; chests.set(k, c); }
+  while (c.items.length < size) c.items.push(null);
   return c;
 }
+const isChestObj = (o) => !!o && !!S.OBJ[o.t] && !!S.OBJ[o.t].chest;
 const chestMine = (p, c) => !c.owner || c.owner.toLowerCase() === p.key;
 function chestView(p, x, y) {
   const c = getChest(x, y);
@@ -290,10 +353,64 @@ function usableChest(p, x, y) {
 function moveStack(fromArr, slot, toArr) {
   const it = fromArr[slot];
   if (!it) return 0;
+  // 이름이 있는 펫은 이름째로 빈 칸에 옮겨요
+  if (it.pname) {
+    const i = toArr.findIndex((s) => !s);
+    if (i < 0) return 0;
+    toArr[i] = it; fromArr[slot] = null;
+    return 1;
+  }
   const left = S.addItem(toArr, it.id, it.n);
   const moved = it.n - left;
   fromArr[slot] = left > 0 ? { id: it.id, n: left } : null;
   return moved;
+}
+
+// ───────── 게시판 · 금주의 MVP ─────────
+// 이번 주 순위 (항목마다 위 5명)
+function mvpStandings(weekKey) {
+  const out = {};
+  for (const c of S.MVP_CATS) {
+    out[c.id] = Object.values(profiles)
+      .filter((pr) => pr.wk && pr.wk.key === weekKey && pr.wk[c.id] > 0)
+      .map((pr) => ({ name: pr.name, v: pr.wk[c.id] }))
+      .sort((a, b) => b.v - a.v).slice(0, 5);
+  }
+  return out;
+}
+function boardView(p) {
+  const per = S.periods(Date.now());
+  return {
+    posts: board.posts.slice(0, 100).map((x) => ({ id: x.id, name: x.name, text: x.text, t: x.t, likes: x.likes.length, liked: x.likes.includes(p.key), mine: x.name.toLowerCase() === p.key })),
+    cur: mvpStandings(per.w.key), ends: per.w.ends, last: board.lastMvp, me: curWk(p.prof),
+  };
+}
+function openBoard(p) { p.viewBoard = true; p.socket.emit('board', boardView(p)); }
+function sendBoardAll() { for (const q of Object.values(players)) if (q.viewBoard) q.socket.emit('board', boardView(q)); }
+// 주가 바뀌면 지난주 1~3등을 정하고 상품을 우편함으로 보내요
+function checkMvpWeek() {
+  const cur = S.periods(Date.now()).w.key;
+  if (board.mvpWeek === cur) return;
+  if (board.mvpWeek) {
+    const cats = mvpStandings(board.mvpWeek);
+    for (const c of S.MVP_CATS) {
+      (cats[c.id] || []).slice(0, 3).forEach((row, rank) => {
+        const pr = profiles[row.name.toLowerCase()];
+        if (!pr) return;
+        pr.mail = pr.mail || [];
+        pr.mail.push(Object.assign({ title: `🏅 금주의 MVP ${rank + 1}등 — ${c.name}` }, S.MVP_PRIZE[rank]));
+        if (rank === 0) pr.stats.mvpWin = (pr.stats.mvpWin || 0) + 1;
+      });
+      cats[c.id] = (cats[c.id] || []).slice(0, 3);
+    }
+    board.lastMvp = { week: board.mvpWeek, cats };
+    const names = S.MVP_CATS.map((c) => (cats[c.id][0] ? `${c.name} ${cats[c.id][0].name}` : null)).filter(Boolean);
+    if (names.length) sys(`🏅 지난주 MVP 발표! ${names.join(' · ')} — 축하해요! 👑`);
+    profilesDirty = true;
+    for (const p of Object.values(players)) { sendMe(p); io.to(ROOM).emit('playerUpdate', { id: p.id, avatar: p.avatar, lv: lvOf(p.prof), mvp: isMvp(p.key) }); }
+  }
+  board.mvpWeek = cur;
+  boardDirty = true;
 }
 
 const kstTime = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
@@ -321,12 +438,10 @@ function animalAct(p, type, a, slot) {
   const heart = () => io.to(ROOM).emit('fx', { x: a.x, y: a.y - 14, text: '💕' });
   if (def.pet) {
     if (type === 'break') {
-      if (!isOwner(p, a)) return `${a.owner} 님의 강아지예요 🐶`;
+      if (!isOwner(p, a)) return `${a.owner} 님의 ${def.name}예요 🐾`;
       if (!room(p, { [def.item]: 1 })) return null;
-      animals.delete(a.id);
-      animalsDirty = worldDirty = true;
-      give(p, def.item, 1, true);
-      return `${j(a.pname, '을', '를')} 가방에 넣었어요`;
+      bagPet(p, a);
+      return `${j(a.pname, '을', '를')} 가방에 넣었어요 (이름은 기억해요)`;
     }
     if (type === 'interact' || type === 'use') {
       heart(); stat(p, 'pet');
@@ -400,7 +515,15 @@ function handleAct(p, type, x, y, slot, rot) {
   if (type === 'break') {
     if (o) {
       if (od.fixed || o.fixed) return '이건 부술 수 없어요';
-      if (o.t === 'chest') {
+      if (o.top) { // 위에 올린 것부터 회수
+        const topItem = S.OBJ[o.top].item;
+        if (!room(p, { [topItem]: 1 })) return null;
+        give(p, topItem, 1, true);
+        const n = Object.assign({}, o); delete n.top;
+        setTile(x, y, undefined, n);
+        return null;
+      }
+      if (isChestObj(o)) {
         const c = getChest(x, y);
         if (c.locked && !chestMine(p, c)) return `🔒 ${c.owner} 님이 잠근 상자예요`;
         if (c.items.some(Boolean)) return '상자를 먼저 비워주세요 📦';
@@ -448,6 +571,7 @@ function handleAct(p, type, x, y, slot, rot) {
       give(p, c.produce, n);
       if (rand() < 0.5) give(p, c.seed, 1, true);
       stat(p, 'harvest', n);
+      if (['tomato', 'corn', 'potato', 'watermelon'].includes(o.kind)) stat(p, 'newcrop', n);
       setTile(x, y, undefined, null);
       return `${c.name} ${n}개 수확! 🎉`;
     }
@@ -470,6 +594,10 @@ function handleAct(p, type, x, y, slot, rot) {
       return null;
     }
     if (od.fx) { io.to(ROOM).emit('fx', { x: x * TILE + 8, y: y * TILE, text: od.fx }); return null; }
+    const td = o.top && S.OBJ[o.top];
+    if (td && td.fx) { io.to(ROOM).emit('fx', { x: x * TILE + 8, y: y * TILE, text: td.fx }); return null; }
+    if (td && td.msg) return td.msg;
+    if (o.t === 'notice_board') { openBoard(p); return null; }
     if (od.msg) return od.msg === 'time' ? `🕰️ 지금은 ${kstTime()} 이에요` : od.msg;
     return null;
   }
@@ -518,11 +646,15 @@ function handleAct(p, type, x, y, slot, rot) {
       const ad = S.ANIMALS[def.animal];
       if (g === 'water' || S.isSolidObj(o)) return '동물이 설 수 있는 곳에 풀어주세요';
       if (ad.pet) {
-        if ([...animals.values()].filter((a) => S.ANIMALS[a.kind].pet && isOwner(p, a)).length >= S.MAX_PETS) return `강아지는 ${S.MAX_PETS}마리까지 데리고 있을 수 있어요`;
-        spawnAnimal({ kind: def.animal, x: x * TILE + 8, y: y * TILE + 12, owner: p.prof.name, mode: 'follow' });
+        const lim = S.maxPets(lvOf(p.prof));
+        if (myPets(p).length >= lim) return `지금은 펫을 ${lim}마리까지 꺼내 둘 수 있어요 (레벨이 오르면 늘어나요)`;
+        const pname = it.pname || ad.name;
+        setFollower(p, null); // 원래 따라오던 펫은 그 자리에서 지내요
+        spawnAnimal({ kind: def.animal, x: x * TILE + 8, y: y * TILE + 12, owner: p.prof.name, mode: 'follow', pname });
         worldDirty = true;
         take();
-        return `${j(ad.name, '이', '가')} 나왔어요! 졸졸 따라와요 🐶 (E로 집에 두기)`;
+        p.prof.stats.petsOut = Math.max(p.prof.stats.petsOut || 0, myPets(p).length);
+        return `${j(pname, '이', '가')} 나왔어요! 졸졸 따라와요 🐾 (따라오는 펫은 1마리, E로 집에 두기)`;
       }
       if ([...animals.values()].filter((a) => !S.ANIMALS[a.kind].wild && !S.ANIMALS[a.kind].pet).length >= 40) return '동물이 너무 많아요!';
       spawnAnimal({ kind: def.animal, x: x * TILE + 8, y: y * TILE + 12, owner: p.name });
@@ -550,7 +682,15 @@ function handleAct(p, type, x, y, slot, rot) {
       return null;
     }
     if (def.obj) {
-      if (o) return '이미 뭔가 있어요';
+      // 조리대·싱크대·테이블 위에 올리기
+      if (o && S.OBJ[def.obj].onTop && od.surface) {
+        if (o.top) return '위에 이미 뭔가 올려져 있어요';
+        setTile(x, y, undefined, Object.assign({}, o, { top: def.obj }));
+        take();
+        stat(p, 'furniturePlaced');
+        return null;
+      }
+      if (o) return S.OBJ[def.obj].onTop ? '조리대·싱크대·테이블 위나 빈 칸에 놓아요' : '이미 뭔가 있어요';
       if (g === 'water') return '물 위에는 놓을 수 없어요';
       const od2 = S.OBJ[def.obj];
       if (od2.solid && occupied(x, y)) return '누가 서 있어요!';
@@ -559,7 +699,7 @@ function handleAct(p, type, x, y, slot, rot) {
       if (def.obj === 'sign') obj.text = '';
       if (rot && S.canRotate(def.obj)) obj.r = rot;
       setTile(x, y, undefined, obj);
-      if (def.obj === 'chest') chests.set(key(x, y), { items: new Array(S.CHEST_SIZE).fill(null), owner: p.prof.name, locked: false });
+      if (S.OBJ[def.obj].chest) chests.set(key(x, y), { items: new Array(S.OBJ[def.obj].chest).fill(null), owner: p.prof.name, locked: false });
       take();
       if (def.cat === 'wall') stat(p, 'wallPlaced');
       if (def.cat === 'furniture') stat(p, 'furniturePlaced');
@@ -703,7 +843,7 @@ io.on('connection', (socket) => {
     if (now - lastAct < 80) return;
     lastAct = now;
     const x = a.x | 0, y = a.y | 0, slot = a.slot | 0;
-    if (!inMap(x, y) || slot < 0 || slot >= S.INV_SIZE) return;
+    if (!inMap(x, y) || slot < 0 || slot >= p.prof.inv.length) return;
     if (!['use', 'break', 'interact'].includes(a.type)) return;
     if (!inReach(p, x, y, 8)) return toast(socket, '너무 멀어요');
     const rot = Number.isInteger(a.r) && a.r >= 0 && a.r < 4 ? a.r : 0;
@@ -720,7 +860,7 @@ io.on('connection', (socket) => {
     const o = getO(x, y);
     if (!o || !S.canRotate(o.t)) return;
     if (!inReach(p, x, y, 8)) return toast(socket, '너무 멀어요');
-    if (o.t === 'chest') { const c = getChest(x, y); if (c.locked && !chestMine(p, c)) return toast(socket, `🔒 ${c.owner} 님이 잠근 상자예요`); }
+    if (isChestObj(o)) { const c = getChest(x, y); if (c.locked && !chestMine(p, c)) return toast(socket, `🔒 ${c.owner} 님이 잠근 상자예요`); }
     if (Object.values(players).some((q) => q.pose && q.pose.x === x && q.pose.y === y)) return toast(socket, '누가 쓰고 있어요!');
     const r = ((o.r || 0) + 1) % 4;
     const n = Object.assign({}, o);
@@ -732,17 +872,17 @@ io.on('connection', (socket) => {
     const p = me();
     const a = animals.get(id);
     if (!p || !a || !S.ANIMALS[a.kind].pet || !isOwner(p, a)) return;
-    if (Math.hypot(a.x - p.x, a.y - p.y) > TILE * 6) return toast(socket, '강아지에게 더 가까이 가주세요');
-    if (cmd === 'follow') { a.mode = 'follow'; toast(socket, `${j(a.pname, '이', '가')} 따라와요! 🐾`); }
+    if (Math.hypot(a.x - p.x, a.y - p.y) > TILE * 6) return toast(socket, '펫에게 더 가까이 가주세요');
+    if (cmd === 'follow') { setFollower(p, a); toast(socket, `${j(a.pname, '이', '가')} 따라와요! 🐾 (다른 펫은 그 자리에서 지내요)`); }
     else if (cmd === 'stay') { a.mode = 'home'; a.hx = a.x; a.hy = a.y; toast(socket, `${j(a.pname, '은', '는')} 여기서 지내요 🏠`); }
     else if (cmd === 'name') {
       const n = String(name || '').trim().slice(0, 10);
       if (!n) return;
       a.pname = n; toast(socket, `이름이 "${n}"(으)로 바뀌었어요`);
     } else if (cmd === 'bag') {
-      animals.delete(a.id);
-      give(p, S.ANIMALS[a.kind].item, 1, true);
-      toast(socket, `${j(a.pname, '을', '를')} 가방에 넣었어요`);
+      if (!room(p, { [S.ANIMALS[a.kind].item]: 1 })) return;
+      bagPet(p, a);
+      toast(socket, `${j(a.pname, '을', '를')} 가방에 넣었어요 (이름은 기억해요)`);
       sendMe(p);
     } else if (cmd === 'pat') {
       stat(p, 'pet');
@@ -757,9 +897,9 @@ io.on('connection', (socket) => {
     const p = me();
     const c = p && usableChest(p, x, y);
     if (!c || !Number.isInteger(slot)) return;
-    if (from === 'inv' && slot >= 0 && slot < S.INV_SIZE) {
+    if (from === 'inv' && slot >= 0 && slot < p.prof.inv.length) {
       if (!moveStack(p.prof.inv, slot, c.items)) toast(socket, '상자가 가득 찼어요 📦');
-    } else if (from === 'chest' && slot >= 0 && slot < S.CHEST_SIZE) {
+    } else if (from === 'chest' && slot >= 0 && slot < c.items.length) {
       const it = c.items[slot];
       if (it && S.ITEMS[it.id] && S.ITEMS[it.id].questOnly && !chestMine(p, c)) return toast(socket, '✨퀘스트 전용 아이템은 상자 주인만 꺼낼 수 있어요');
       if (!moveStack(c.items, slot, p.prof.inv)) toast(socket, '가방이 가득 찼어요 🎒');
@@ -773,9 +913,9 @@ io.on('connection', (socket) => {
     const c = p && usableChest(p, x, y);
     if (!c) return;
     let n = 0;
-    if (dir === 'in') { for (let i = 9; i < S.INV_SIZE; i++) n += moveStack(p.prof.inv, i, c.items); } // 단축바(1~9)는 남겨요
+    if (dir === 'in') { for (let i = 9; i < p.prof.inv.length; i++) n += moveStack(p.prof.inv, i, c.items); } // 단축바(1~9)는 남겨요
     else if (dir === 'out') {
-      for (let i = 0; i < S.CHEST_SIZE; i++) {
+      for (let i = 0; i < c.items.length; i++) {
         const it = c.items[i];
         if (it && S.ITEMS[it.id] && S.ITEMS[it.id].questOnly && !chestMine(p, c)) continue;
         n += moveStack(c.items, i, p.prof.inv);
@@ -802,7 +942,7 @@ io.on('connection', (socket) => {
 
   socket.on('swap', ({ a, b } = {}) => {
     const p = me();
-    if (!p || !Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a >= S.INV_SIZE || b >= S.INV_SIZE) return;
+    if (!p || !Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a >= p.prof.inv.length || b >= p.prof.inv.length) return;
     const inv = p.prof.inv;
     if (inv[a] && inv[b] && inv[a].id === inv[b].id && a !== b) {
       const max = S.ITEMS[inv[a].id].stack;
@@ -817,7 +957,7 @@ io.on('connection', (socket) => {
 
   socket.on('trash', ({ slot } = {}) => {
     const p = me();
-    if (!p || !Number.isInteger(slot) || slot < 0 || slot >= S.INV_SIZE) return;
+    if (!p || !Number.isInteger(slot) || slot < 0 || slot >= p.prof.inv.length) return;
     p.prof.inv[slot] = null;
     sendMe(p);
   });
@@ -827,6 +967,7 @@ io.on('connection', (socket) => {
     const entry = S.SHOP.find((e) => e[0] === id);
     n = [1, 5, 10].includes(n) ? n : 1;
     if (!p || !entry || !S.ITEMS[id] || S.ITEMS[id].questOnly) return;
+    if ((entry[2] || 1) > lvOf(p.prof)) return toast(socket, `🔒 레벨 ${entry[2]}부터 살 수 있어요`);
     const cost = entry[1] * n;
     if (p.prof.coins < cost) return toast(socket, '코인이 부족해요 💰');
     p.prof.coins -= cost;
@@ -856,6 +997,7 @@ io.on('connection', (socket) => {
     const p = me();
     const c = S.COSMETICS[id];
     if (!p || !c || !c.price || c.quest || p.prof.unlocked.includes(id)) return;
+    if ((c.lv || 1) > lvOf(p.prof)) return toast(socket, `🔒 레벨 ${c.lv}부터 살 수 있어요`);
     if (p.prof.coins < c.price) return toast(socket, '코인이 부족해요 💰');
     p.prof.coins -= c.price;
     p.prof.unlocked.push(id);
@@ -868,6 +1010,7 @@ io.on('connection', (socket) => {
     const p = me();
     const r = S.RECIPES[i];
     if (!p || !r) return;
+    if ((r.lv || 1) > lvOf(p.prof)) return toast(socket, `🔒 레벨 ${r.lv}부터 만들 수 있어요`);
     for (const [id, n] of Object.entries(r.need)) if (S.countItem(p.prof.inv, id) < n) return toast(socket, '재료가 부족해요');
     if (!room(p, { [r.out]: r.n }, r.need)) return;
     for (const [id, n] of Object.entries(r.need)) S.removeItem(p.prof.inv, id, n);
@@ -880,6 +1023,7 @@ io.on('connection', (socket) => {
     const p = me();
     const r = S.COOK[i];
     if (!p || !r) return;
+    if ((r.lv || 1) > lvOf(p.prof)) return toast(socket, `🔒 레벨 ${r.lv}부터 만들 수 있는 요리예요`);
     if (!nearStation(p)) return toast(socket, '가스레인지나 모닥불 가까이에서 요리해요 🍳');
     n = n === 5 ? 5 : 1;
     let made = 0;
@@ -903,6 +1047,7 @@ io.on('connection', (socket) => {
     if (!p || !q || p.prof.claimed.includes(id) || (p.prof.stats[q.stat] || 0) < q.goal) return;
     if (!room(p, q.reward.items)) return;
     p.prof.claimed.push(id);
+    stat(p, 'questDone');
     grant(p, `🏆 퀘스트 완료! "${q.name}"`, q.reward);
     sys(`${p.name} 님이 퀘스트 "${q.name}" 완료! 🏆`);
     sendMe(p);
@@ -944,15 +1089,52 @@ io.on('connection', (socket) => {
     sendMe(p);
   });
 
-  // 예전에 가방이 꽉 차서 못 받은 보상 돌려받기
-  socket.on('claimRecover', () => {
+  // 📮 우편함 (못 받은 보상, 금주의 MVP 상품)
+  socket.on('claimMail', ({ i } = {}) => {
     const p = me();
-    const rc = p && p.prof.recover;
-    if (!rc || !Object.keys(rc).length) return;
-    if (!room(p, rc)) return;
-    delete p.prof.recover;
-    grant(p, '📮 예전에 못 받은 보상을 돌려드려요!', { items: rc });
+    const m = p && Number.isInteger(i) && p.prof.mail[i];
+    if (!m) return;
+    if (!room(p, m.items)) return;
+    p.prof.mail.splice(i, 1);
+    grant(p, m.title, m);
     sendMe(p);
+  });
+
+  // 📌 마을 게시판: 건의함 + 금주의 MVP
+  let lastPost = 0;
+  socket.on('boardOpen', () => { const p = me(); if (p) openBoard(p); });
+  socket.on('boardClose', () => { const p = me(); if (p) p.viewBoard = false; });
+  socket.on('boardPost', ({ text } = {}) => {
+    const p = me();
+    if (!p) return;
+    text = String(text || '').trim().slice(0, 150);
+    if (!text) return;
+    if (Date.now() - lastPost < 20000) return toast(socket, '조금 있다가 다시 써주세요 (20초)');
+    lastPost = Date.now();
+    board.posts.unshift({ id: board.nextId++, name: p.name, text, t: Date.now(), likes: [] });
+    if (board.posts.length > 200) board.posts.length = 200;
+    boardDirty = true;
+    stat(p, 'post');
+    toast(socket, '📌 건의함에 글을 올렸어요! 고마워요');
+    sendBoardAll();
+    sendMe(p);
+  });
+  socket.on('boardLike', ({ id } = {}) => {
+    const p = me();
+    const post = p && board.posts.find((x) => x.id === id);
+    if (!post) return;
+    const i = post.likes.indexOf(p.key);
+    if (i >= 0) post.likes.splice(i, 1); else post.likes.push(p.key);
+    boardDirty = true;
+    sendBoardAll();
+  });
+  socket.on('boardDel', ({ id } = {}) => {
+    const p = me();
+    const idx = p ? board.posts.findIndex((x) => x.id === id && x.name.toLowerCase() === p.key) : -1;
+    if (idx < 0) return;
+    board.posts.splice(idx, 1);
+    boardDirty = true;
+    sendBoardAll();
   });
 
   socket.on('avatar', (av) => {
@@ -1143,6 +1325,7 @@ setInterval(() => {
   for (const p of Object.values(players)) {
     if (refreshPQ(p.prof)) { toast(p.socket, '📅 새 퀘스트가 도착했어요! (Q)'); sendMe(p); }
   }
+  checkMvpWeek();
 }, 30000);
 
 // 동물 움직임 (초당 10번)
@@ -1150,7 +1333,8 @@ let lastWildSpawn = 0;
 function randomSpawnTile(kind) {
   for (let i = 0; i < 40; i++) {
     let x, y;
-    if (kind === 'deer' || (kind === 'boar' && rand() < 0.6)) { x = S.OW + 1 + Math.floor(rand() * (W - S.OW - 4)); y = 3 + Math.floor(rand() * (S.OH - 6)); }
+    // 사슴·멧돼지: 아래쪽 나무꾼의 숲 (멧돼지는 가끔 마을 왼쪽 위 숲에도)
+    if (kind === 'deer' || (kind === 'boar' && rand() < 0.6)) { x = S.BX + 2 + Math.floor(rand() * (W - S.BX - 5)); y = S.CY + 3 + Math.floor(rand() * (H - S.CY - 6)); }
     else if (kind === 'boar') { x = 3 + Math.floor(rand() * 16); y = 3 + Math.floor(rand() * 16); }
     else { x = 3 + Math.floor(rand() * (W - 6)); y = 3 + Math.floor(rand() * (S.CY - 6)); }
     const g = world.ground[y][x];
@@ -1233,8 +1417,9 @@ async function saveAll() {
   try {
     if (worldDirty) { worldDirty = false; await saveData('world', serializeWorld()); }
     if (profilesDirty) { profilesDirty = false; await saveData('profiles', profiles); }
+    if (boardDirty) { boardDirty = false; await saveData('board', board); }
   } catch (e) {
-    worldDirty = profilesDirty = true;
+    worldDirty = profilesDirty = boardDirty = true;
     console.error('저장 실패:', e.message);
   }
 }
@@ -1265,7 +1450,7 @@ function computeRecover(pr) {
     const d = S.ITEMS[id];
     let have = S.countItem(pr.inv, id);
     for (const c of chests.values()) if (c.owner && c.owner.toLowerCase() === k) have += S.countItem(c.items, id);
-    if (d.obj) for (const o of world.objects.values()) if (o.t === d.obj) have++;
+    if (d.obj) for (const o of world.objects.values()) { if (o.t === d.obj) have++; if (o.top === d.obj) have++; }
     if (d.animal) for (const a of animals.values()) if (a.kind === d.animal && a.owner && a.owner.toLowerCase() === k) have++;
     if (n > have) missing[id] = n - have;
   }
@@ -1279,13 +1464,40 @@ function migrateWorld(saved) {
   S.expandWorld(ground, objects);
   return { ground, objects: new Map(Object.entries(objects)) };
 }
+// 버전 4 맵 → 5: 오른쪽 위 숲은 집 짓는 땅으로, 아래쪽은 동굴(왼쪽)+숲(오른쪽)으로 다시 만들어요.
+// 지은 집·놓은 물건은 그대로. 아래쪽에 있던 상자의 물건은 주인 우편함으로, 아래쪽 동물은 마을로 옮겨요.
+function upgradeWorldV4(saved) {
+  const objects = Object.assign({}, saved.objects);
+  const ground = saved.ground.map((row) => row.slice());
+  for (const [k, c] of Object.entries(saved.chests || {})) {
+    const y = +k.split(',')[1];
+    if (y < S.CY) continue;
+    const items = {};
+    for (const it of c.items || []) if (it) items[it.id] = (items[it.id] || 0) + it.n;
+    const pr = c.owner && profiles[c.owner.toLowerCase()];
+    if (pr && Object.keys(items).length) { pr.mail = pr.mail || []; pr.mail.push({ title: '📦 지도가 바뀌어서 옮겨드린 상자 속 물건', items }); }
+    delete saved.chests[k];
+  }
+  S.upgradeV4(ground, objects);
+  for (const a of saved.animals || []) if (a.y >= S.CY * TILE) { a.x = a.hx = S.SPAWN.x + 40; a.y = a.hy = S.SPAWN.y + 80; }
+  return { ground, objects: new Map(Object.entries(objects)) };
+}
 (async () => {
+  profiles = (await loadData('profiles')) || {};
+  board = Object.assign(board, (await loadData('board')) || {});
   const saved = process.env.RESET_WORLD ? null : await loadData('world');
   if (saved && saved.version === S.WORLD_VERSION && saved.w === W && saved.h === H) {
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
     console.log('🗺️  저장된 맵을 불러왔어요');
+  } else if (saved && saved.version === 4 && saved.w === W && saved.h === H) {
+    await saveData('world_backup_v4', saved);
+    world = upgradeWorldV4(saved);
+    chests = new Map(Object.entries(saved.chests || {}));
+    (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
+    worldDirty = profilesDirty = true;
+    console.log('🗺️  지도를 새 배치로 바꿨어요 (생산 구역은 아래로). 예전 맵은 world_backup_v4 에 보관했어요');
   } else if (saved && saved.version === 3 && saved.w === S.OW && saved.h === S.OH) {
     await saveData('world_backup_v3', saved);
     world = migrateWorld(saved);
@@ -1299,23 +1511,30 @@ function migrateWorld(saved) {
     worldDirty = true;
     console.log('🗺️  새 맵을 만들었어요');
   }
-  profiles = (await loadData('profiles')) || {};
-  if (Object.keys(profiles).length && !(await loadData('profiles_backup_v4'))) {
-    await saveData('profiles_backup_v4', profiles);
-    console.log('💾 업데이트 전 프로필을 profiles_backup_v4 에 따로 보관했어요');
+  if (Object.keys(profiles).length && !(await loadData('profiles_backup_v5'))) {
+    await saveData('profiles_backup_v5', profiles);
+    console.log('💾 업데이트 전 프로필을 profiles_backup_v5 에 따로 보관했어요');
   }
   for (const pr of Object.values(profiles)) {
     ensureProfile(pr);
-    // 한 번만: 예전에 가방이 꽉 차서 사라졌을 수 있는 보상 찾기 → 퀘스트 창 📮 에서 돌려받아요
+    // 한 번만: 예전에 가방이 꽉 차서 사라졌을 수 있는 보상 찾기 → 📮 우편함에서 돌려받아요
     if (!pr.recoverChecked) {
       pr.recoverChecked = 1;
       const m = computeRecover(pr);
       if (Object.keys(m).length) {
-        pr.recover = Object.assign(pr.recover || {}, m);
+        pr.mail.push({ title: '📮 예전에 가방이 꽉 차서 못 받은 보상', items: m });
         console.log(`📮 ${pr.name} 님에게 돌려줄 보상:`, JSON.stringify(m));
       }
-      profilesDirty = true;
     }
+    profilesDirty = true;
+  }
+  checkMvpWeek();
+  // 📢 새 업데이트면 채팅으로 공지 (게시판 '업데이트 소식' 탭에 자세히)
+  const latest = S.UPDATES[0];
+  if (board.noticeV !== latest.v) {
+    board.noticeV = latest.v;
+    boardDirty = true;
+    sys(`📢 새 업데이트! "${latest.title}" — 마을 게시판(📌)에서 자세히 볼 수 있어요`);
   }
   server.listen(PORT, () => {
     console.log(`📄 알PDF 서버 실행 중: http://localhost:${PORT}`);
