@@ -677,9 +677,10 @@
       S.RECIPES.forEach((r, i) => {
         const ok = Object.entries(r.need).every(([id, n]) => S.countItem(my.inv, id) >= n);
         const need = Object.entries(r.need).map(([id, n]) => `${itemName(id)} ${n}개 (보유 ${S.countItem(my.inv, id)})`).join(' + ');
+        const full = ok && !fits({ [r.out]: r.n }, r.need);
         rows.append(el('div', { class: 'row' }, iconImg(r.out),
-          el('div', { class: 'grow' }, `${itemName(r.out)} ×${r.n}`, el('small', {}, need)),
-          el('button', { class: 'btn pink', disabled: !ok, onclick: () => socket.emit('craft', { i }) }, '만들기')));
+          el('div', { class: 'grow' }, `${itemName(r.out)} ×${r.n}`, el('small', {}, full ? '🎒 가방이 꽉 찼어요 — 가방을 비워야 만들 수 있어요' : need)),
+          el('button', { class: 'btn pink', disabled: !ok || full, onclick: () => socket.emit('craft', { i }) }, full ? '가방 부족' : '만들기')));
       });
       body.append(el('p', { class: 'note' }, '🌲 나무는 숲에서, ⛏ 돌·철광석은 동굴에서 X로 모아요.'), rows);
     }
@@ -743,11 +744,26 @@
     return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
   }
   const pqReady = (q) => !q.done && (my.stats[q.stat] || 0) - q.base >= q.goal;
+  // 보상 받기 버튼: 가방에 다 안 들어가면 막고 알려줘요
+  const fits = (items, remove) => S.canFit(my.inv, items || {}, remove);
+  function claimBtn(items, onclick) {
+    if (fits(items)) return el('button', { class: 'btn pink', onclick }, '보상 받기');
+    return el('div', { class: 'fullbox' }, el('button', { class: 'btn', disabled: true }, '🎒 가방 부족'), el('small', {}, '가방을 비워야 받을 수 있어요'));
+  }
+  function recoverRow() {
+    const rc = my.recover;
+    if (!rc || !Object.keys(rc).length) return null;
+    return el('div', { class: 'row ready', style: 'margin-bottom:10px' },
+      el('div', { class: 'grow' }, el('b', {}, '📮 예전에 가방이 꽉 차서 못 받은 보상'),
+        el('div', { class: 'pick-row', style: 'margin-top:4px' }, Object.entries(rc).map(([id, n]) => el('span', { class: 'pick-row', title: itemName(id) }, iconImg(id), `${itemName(id)} ×${n}`)))),
+      claimBtn(rc, () => socket.emit('claimRecover')));
+  }
   function questReadyCount() {
     if (!my) return 0;
     let n = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
     for (const t of ['d', 'w', 'm']) if (my.pq[t]) n += my.pq[t].list.filter(pqReady).length;
     n += S.COLLECTIONS.filter((c) => !my.colClaimed.includes(c.id) && c.entries.every((e) => my.col[e])).length;
+    if (my.recover && Object.keys(my.recover).length) n++;
     return n;
   }
   function updateQuestBadge() {
@@ -760,6 +776,8 @@
     const cnt = (t) => (my.pq[t] ? my.pq[t].list.filter(pqReady).length : 0);
     const badge = (n) => (n ? ` 🔴${n}` : '');
     const aCnt = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
+    const rr = recoverRow();
+    if (rr) body.append(rr);
     body.append(tabs(questTab, [['d', '📅 일간' + badge(cnt('d'))], ['w', '🗓️ 주간' + badge(cnt('w'))], ['m', '🌙 월간' + badge(cnt('m'))], ['a', '🏆 업적' + badge(aCnt)]], (t) => { questTab = t; }));
     const rows = el('div', { class: 'rows' });
     if (questTab !== 'a') {
@@ -775,7 +793,7 @@
           el('div', { class: 'grow' }, el('b', {}, t === 'd' ? `Lv.${q.lv + 1} ` : ''), q.desc,
             el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
             el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
-          ready ? el('button', { class: 'btn pink', onclick: () => socket.emit('claimP', { type: t, id: q.id }) }, '보상 받기')
+          ready ? claimBtn(q.reward.items, () => socket.emit('claimP', { type: t, id: q.id }))
             : q.done ? el('span', {}, '✅') : null));
       });
     } else {
@@ -786,7 +804,7 @@
           el('div', { class: 'grow' }, el('b', {}, q.name), ` — ${q.desc}`,
             el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
             el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
-          st === 0 ? el('button', { class: 'btn pink', onclick: () => socket.emit('claim', { id: q.id }) }, '보상 받기')
+          st === 0 ? claimBtn(q.reward.items, () => socket.emit('claim', { id: q.id }))
             : st === 2 ? el('span', {}, '✅') : null));
       });
     }
@@ -808,7 +826,7 @@
       }));
       rows.append(el('div', { class: 'row col' + (claimed ? ' done' : '') },
         el('div', { class: 'grow' }, el('b', {}, `${c.name}  ${got} / ${c.entries.length}`), cells, el('small', {}, rewardText(c.reward))),
-        done && !claimed ? el('button', { class: 'btn pink', onclick: () => socket.emit('claimCol', { id: c.id }) }, '보상 받기') : claimed ? el('span', {}, '✅') : null));
+        done && !claimed ? claimBtn(c.reward.items, () => socket.emit('claimCol', { id: c.id })) : claimed ? el('span', {}, '✅') : null));
     });
     body.append(rows);
   }
@@ -825,10 +843,12 @@
     S.COOK.forEach((r, i) => {
       const ok = Object.entries(r.need).every(([id, n]) => S.countItem(my.inv, id) >= n);
       const need = Object.entries(r.need).map(([id, n]) => `${itemName(id)} ${n} (${S.countItem(my.inv, id)})`).join(' + ');
+      const full = ok && !fits({ [r.out]: 1 }, r.need);
       rows.append(el('div', { class: 'row' + (ok ? '' : ' dim') }, iconImg(r.out),
-        el('div', { class: 'grow' }, `${itemName(r.out)} · 팔면 💰${S.ITEMS[r.out].sell}`, my.col[r.out] ? null : el('span', { class: 'tag' }, 'NEW'), el('small', {}, need)),
-        el('button', { class: 'btn pink', disabled: !ok, onclick: () => socket.emit('cook', { i }) }, '요리'),
-        el('button', { class: 'btn', disabled: !ok, onclick: () => socket.emit('cook', { i, n: 5 }) }, '×5')));
+        el('div', { class: 'grow' }, `${itemName(r.out)} · 팔면 💰${S.ITEMS[r.out].sell}`, my.col[r.out] ? null : el('span', { class: 'tag' }, 'NEW'),
+          el('small', {}, full ? '🎒 가방이 꽉 찼어요 — 가방을 비워야 요리할 수 있어요' : need)),
+        el('button', { class: 'btn pink', disabled: !ok || full, onclick: () => socket.emit('cook', { i }) }, full ? '가방 부족' : '요리'),
+        el('button', { class: 'btn', disabled: !ok || full, onclick: () => socket.emit('cook', { i, n: 5 }) }, '×5')));
     });
     body.append(rows);
   }

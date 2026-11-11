@@ -29,7 +29,7 @@
   // tool: 도구 / seed: 심을 작물 / ground: 바닥에 까는 블록 / obj: 세우는 블록·가구 / sell: 상점 판매가
   // food: 요리 (Space로 먹으면 잠깐 빨라져요) / questOnly: 퀘스트 보상 전용 (상점·만들기·거래 불가)
   const ITEMS = {
-    hoe: { name: '괭이', tool: 'hoe', stack: 1, desc: '풀밭을 바라보고 Space → 밭이 돼요' },
+    hoe: { name: '괭이', tool: 'hoe', stack: 1, desc: '땅을 바라보고 Space → 밭이 돼요 (물 빼고 어디든! 바닥 블록은 가방으로 돌아와요)' },
     can: { name: '물뿌리개', tool: 'can', stack: 1, desc: '심은 작물에 Space → 물을 줘요' },
     rod: { name: '낚싯대', tool: 'rod', stack: 1, desc: '물을 보고 Space, 찌에 ❗가 뜨면 다시 Space!' },
     bow: { name: '활', tool: 'bow', stack: 1, desc: 'Space로 화살 발사! (마우스 쪽 또는 바라보는 쪽) 야생 동물 사냥' },
@@ -355,6 +355,9 @@
     ['bath', '🛁 욕실', [['toilet', 120], ['bathtub', 220], ['washbasin', 100], ['shower', 180], ['mirror', 70], ['towel_rack', 40], ['washer', 260], ['bath_shelf', 50], ['floor_bath', 4]]],
     ['animal', '🐶 동물·도구', [['animal_chicken', 80], ['animal_sheep', 180], ['animal_cow', 250], ['pet_dog', 400], ['pet_dog_white', 600], ['bow', 120]]],
   ];
+  // 사는 가격 배수 (돈이 너무 잘 벌려서 2배로 올렸어요. 파는 가격은 그대로)
+  const PRICE_MULT = 2;
+  for (const [, , list] of SHOP_TABS) for (const e of list) e[1] = Math.round(e[1] * PRICE_MULT);
   const SHOP = [];
   for (const [, , list] of SHOP_TABS) for (const e of list) if (!SHOP.some((s) => s[0] === e[0])) SHOP.push(e);
 
@@ -457,6 +460,7 @@
     { id: 'backpack', name: '배낭', price: 250 }, { id: 'cattail', name: '고양이 꼬리', price: 300 }, { id: 'cape', name: '망토', price: 400 },
     { id: 'wings', name: '천사 날개', quest: 1 }, { id: 'fairy', name: '요정 날개', quest: 1 }, { id: 'batwings', name: '박쥐 날개', quest: 1 },
   ];
+  for (const list of [TOPS, ACCESSORIES, BACKS]) for (const c of list) if (c.price) c.price = Math.round(c.price * PRICE_MULT);
   const COSMETICS = {}; // id -> { id, name, slot, price?, quest? }
   ACCESSORIES.forEach((a) => { COSMETICS[a.id] = Object.assign({ slot: 'acc' }, a); });
   TOPS.forEach((a) => { COSMETICS[a.id] = Object.assign({ slot: 'top' }, a); });
@@ -651,6 +655,13 @@
     return true;
   }
   const canTrade = (id) => !!ITEMS[id] && !ITEMS[id].questOnly;
+  // 이 아이템들이 가방에 전부 들어가는지 (remove 를 먼저 빼고 계산)
+  function canFit(inv, items, remove) {
+    const copy = inv.map((it) => (it ? { id: it.id, n: it.n } : null));
+    if (remove) for (const [id, n] of Object.entries(remove)) removeItem(copy, id, n);
+    for (const [id, n] of Object.entries(items || {})) if (addItem(copy, id, n) > 0) return false;
+    return true;
+  }
 
   // ───────── 처음 맵 만들기 ─────────
   // 마을(예전 맵 64×48)을 만든 뒤 expandWorld 로 숲과 동굴을 붙여요.
@@ -859,7 +870,7 @@
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,
     SKINS, HAIR_STYLES, HAIR_COLORS, EYES, TOPS, CLOTH, ACCESSORIES, BACKS, COSMETICS, COSMETIC_SRC, isLocked, FREE_ACC,
-    defaultAvatar, sanitizeAvatar, INV_SIZE, CHEST_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, generateWorld, expandWorld,
+    defaultAvatar, sanitizeAvatar, INV_SIZE, CHEST_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, canFit, PRICE_MULT, generateWorld, expandWorld,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = SHARED;
   else root.SHARED = SHARED;

@@ -185,7 +185,7 @@ function sendMe(p) {
   const per = S.periods(Date.now());
   p.socket.emit('me', {
     coins: pr.coins, inv: pr.inv, stats: pr.stats, claimed: pr.claimed, unlocked: pr.unlocked, avatar: pr.avatar,
-    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
+    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, recover: pr.recover || null, ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
   });
   updateHeld(p);
   profilesDirty = true;
@@ -208,6 +208,14 @@ function give(p, id, n, noCol) {
   if (left > 0) toast(p.socket, '가방이 가득 찼어요! 🎒');
   if (!noCol && n - left > 0) collect(p, id);
 }
+// 가방에 다 들어갈 때만 진행해요. 안 들어가면 알려주고 false (아이템이 사라지지 않게)
+const FULL_MSG = '🎒 가방이 꽉 찼어요! 가방을 비워야 받을 수 있어요';
+function room(p, items, remove) {
+  if (S.canFit(p.prof.inv, items, remove)) return true;
+  toast(p.socket, FULL_MSG);
+  return false;
+}
+const natGround = (x, y) => ({ cave: 'cave', forest: 'forest' })[S.zoneAt(x, y)] || 'grass';
 const stat = (p, k, n = 1) => { p.prof.stats[k] = (p.prof.stats[k] || 0) + n; };
 // 보상 주기 + 받은 것 화면에 보여주기
 function grant(p, title, rw) {
@@ -299,6 +307,7 @@ function hurtAnimal(p, a, dmg) {
   const ang = Math.atan2(a.y - p.y, a.x - p.x);
   a.tx = a.x + Math.cos(ang) * 48; a.ty = a.y + Math.sin(ang) * 48; a.nextThink = Date.now() + 1500;
   if (a.hp > 0) return null;
+  if (!room(p, def.drop)) { a.hp = 1; return null; }
   animals.delete(a.id);
   for (const [id, n] of Object.entries(def.drop)) give(p, id, n);
   stat(p, 'hunt');
@@ -313,6 +322,7 @@ function animalAct(p, type, a, slot) {
   if (def.pet) {
     if (type === 'break') {
       if (!isOwner(p, a)) return `${a.owner} 님의 강아지예요 🐶`;
+      if (!room(p, { [def.item]: 1 })) return null;
       animals.delete(a.id);
       animalsDirty = worldDirty = true;
       give(p, def.item, 1, true);
@@ -326,6 +336,7 @@ function animalAct(p, type, a, slot) {
   }
   if (type === 'break') {
     if (def.wild) return hurtAnimal(p, a, 1);
+    if (!room(p, { [def.item]: 1 })) return null;
     animals.delete(a.id);
     animalsDirty = worldDirty = true;
     give(p, def.item, 1, true);
@@ -334,6 +345,7 @@ function animalAct(p, type, a, slot) {
   if (def.wild) return type === 'interact' ? `야생 ${def.name}예요! 활(Space)이나 X로 사냥할 수 있어요` : null;
   if (type === 'interact') {
     if (a.ready) {
+      if (!room(p, { [def.produce]: 1 })) return null;
       a.ready = false; animalsDirty = worldDirty = true;
       give(p, def.produce, 1);
       stat(p, 'produce');
@@ -359,6 +371,7 @@ function animalAct(p, type, a, slot) {
 }
 
 function pickAt(p, x, y, o, def) {
+  if (!room(p, def.pick)) return null;
   const got = [];
   for (const [id, n] of Object.entries(def.pick)) { give(p, id, n); stat(p, id, n); got.push(`${S.ITEMS[id].name} ${n}`); }
   setTile(x, y, undefined, { t: def.regrow, at: Date.now() + def.regrowMs, back: o.t });
@@ -395,12 +408,17 @@ function handleAct(p, type, x, y, slot, rot) {
         for (const q of Object.values(players)) if (q.viewChest === key(x, y)) { q.viewChest = null; q.socket.emit('chest', null); }
       }
       if (o.t === 'crop') {
+        if (o.stage === 0 && !room(p, { [S.CROPS[o.kind].seed]: 1 })) return null;
         setTile(x, y, undefined, null);
         if (o.stage === 0) give(p, S.CROPS[o.kind].seed, 1, true);
         return null;
       }
       if (od.pick) return pickAt(p, x, y, o, od);
       if (o.at && o.back) return '다시 자라는 중이에요 🌱';
+      const willGet = Object.assign({}, od.drop || {});
+      for (const [id] of od.bonus || []) willGet[id] = (willGet[id] || 0) + 1;
+      if (od.item) willGet[od.item] = (willGet[od.item] || 0) + 1;
+      if (!room(p, willGet)) return null;
       if (od.drop) {
         for (const [id, n] of Object.entries(od.drop)) { give(p, id, n); stat(p, id, n); }
         for (const [id, chance] of od.bonus || []) if (rand() < chance) { give(p, id, 1); stat(p, id, 1); }
@@ -410,8 +428,8 @@ function handleAct(p, type, x, y, slot, rot) {
       return null;
     }
     const gd = S.GROUND[g];
-    if (gd && gd.item) { give(p, gd.item, 1, true); setTile(x, y, S.zoneAt(x, y) === 'cave' ? 'cave' : S.zoneAt(x, y) === 'forest' ? 'forest' : 'grass'); return null; }
-    if (g === 'farm') { setTile(x, y, 'grass'); return null; }
+    if (gd && gd.item) { if (!room(p, { [gd.item]: 1 })) return null; give(p, gd.item, 1, true); setTile(x, y, natGround(x, y)); return null; }
+    if (g === 'farm') { setTile(x, y, natGround(x, y)); return null; }
     return null;
   }
 
@@ -425,6 +443,7 @@ function handleAct(p, type, x, y, slot, rot) {
     if (o.t === 'crop') {
       if (o.stage < 3) return o.water ? '쑥쑥 자라는 중이에요 🌱' : '물이 필요해요 💧 (물뿌리개)';
       const c = S.CROPS[o.kind];
+      if (!room(p, { [c.produce]: c.yield[1], [c.seed]: 1 })) return null;
       const n = c.yield[0] + Math.floor(rand() * (c.yield[1] - c.yield[0] + 1));
       give(p, c.produce, n);
       if (rand() < 0.5) give(p, c.seed, 1, true);
@@ -470,9 +489,12 @@ function handleAct(p, type, x, y, slot, rot) {
       return `냠냠! ${j(def.name, '을', '를')} 먹었어요. 잠깐 빨라져요 💨`;
     }
     if (def.tool === 'hoe') {
+      // 물만 빼고 어디든 밭으로! 바닥 블록(나무 바닥·길 등)은 가방으로 돌아와요
       if (o) return '위에 있는 걸 먼저 치워주세요 (X)';
       if (g === 'farm') return null;
-      if (g !== 'grass' && g !== 'forest') return '풀밭에서만 밭을 갈 수 있어요';
+      if (g === 'water') return '물 위에는 밭을 갈 수 없어요';
+      const gd0 = S.GROUND[g];
+      if (gd0 && gd0.item) { if (!room(p, { [gd0.item]: 1 })) return null; give(p, gd0.item, 1, true); }
       setTile(x, y, 'farm');
       return null;
     }
@@ -847,6 +869,7 @@ io.on('connection', (socket) => {
     const r = S.RECIPES[i];
     if (!p || !r) return;
     for (const [id, n] of Object.entries(r.need)) if (S.countItem(p.prof.inv, id) < n) return toast(socket, '재료가 부족해요');
+    if (!room(p, { [r.out]: r.n }, r.need)) return;
     for (const [id, n] of Object.entries(r.need)) S.removeItem(p.prof.inv, id, n);
     give(p, r.out, r.n, true);
     toast(socket, `${S.ITEMS[r.out].name} ${r.n}개를 만들었어요! 🔨`);
@@ -862,12 +885,13 @@ io.on('connection', (socket) => {
     let made = 0;
     for (let k = 0; k < n; k++) {
       if (!Object.entries(r.need).every(([id, c]) => S.countItem(p.prof.inv, id) >= c)) break;
+      if (!S.canFit(p.prof.inv, { [r.out]: 1 }, r.need)) { toast(socket, FULL_MSG); break; }
       for (const [id, c] of Object.entries(r.need)) S.removeItem(p.prof.inv, id, c);
       give(p, r.out, 1);
       stat(p, 'cook');
       made++;
     }
-    if (!made) return toast(socket, '재료가 부족해요');
+    if (!made) return S.canFit(p.prof.inv, { [r.out]: 1 }, r.need) ? toast(socket, '재료가 부족해요') : null;
     io.to(ROOM).emit('fx', { x: p.x, y: p.y - 28, text: '🍳' });
     toast(socket, `${S.ITEMS[r.out].name} ${made}개 완성! 😋`);
     sendMe(p);
@@ -877,6 +901,7 @@ io.on('connection', (socket) => {
     const p = me();
     const q = S.QUESTS.find((x) => x.id === id);
     if (!p || !q || p.prof.claimed.includes(id) || (p.prof.stats[q.stat] || 0) < q.goal) return;
+    if (!room(p, q.reward.items)) return;
     p.prof.claimed.push(id);
     grant(p, `🏆 퀘스트 완료! "${q.name}"`, q.reward);
     sys(`${p.name} 님이 퀘스트 "${q.name}" 완료! 🏆`);
@@ -892,6 +917,7 @@ io.on('connection', (socket) => {
     const idx = box.list.findIndex((q) => q.id === id);
     const q = box.list[idx];
     if (!q || q.done || (pr.stats[q.stat] || 0) - q.base < q.goal) return;
+    if (!room(p, q.reward.items)) return;
     const label = S.PQ_NAMES[type];
     if (type === 'd') {
       pr.dlv++;
@@ -911,9 +937,21 @@ io.on('connection', (socket) => {
     const p = me();
     const c = S.COLLECTIONS.find((x) => x.id === id);
     if (!p || !c || p.prof.colClaimed.includes(id) || !c.entries.every((e) => p.prof.col[e])) return;
+    if (!room(p, c.reward.items)) return;
     p.prof.colClaimed.push(id);
     grant(p, `📖 ${c.name} 완성!`, c.reward);
     sys(`${p.name} 님이 ${c.name}을 완성했어요! 📖`);
+    sendMe(p);
+  });
+
+  // 예전에 가방이 꽉 차서 못 받은 보상 돌려받기
+  socket.on('claimRecover', () => {
+    const p = me();
+    const rc = p && p.prof.recover;
+    if (!rc || !Object.keys(rc).length) return;
+    if (!room(p, rc)) return;
+    delete p.prof.recover;
+    grant(p, '📮 예전에 못 받은 보상을 돌려드려요!', { items: rc });
     sendMe(p);
   });
 
@@ -946,6 +984,7 @@ io.on('connection', (socket) => {
     const it = p.prof.inv[slot | 0];
     const rod = it && S.ITEMS[it.id] && S.ITEMS[it.id].tool === 'rod' ? S.ITEMS[it.id] : null;
     if (!rod) return;
+    if (!p.prof.inv.some((s) => !s)) return toast(socket, '🎒 가방이 꽉 차서 물고기를 넣을 칸이 없어요! 한 칸 비워주세요');
     if (p.pose) setPose(p, null);
     const biteIn = rod.gold ? 700 + rand() * 2300 : 1500 + rand() * 4500;
     const f = p.fishing = { x, y, biteAt: Date.now() + biteIn, timer: null, gold: !!rod.gold, zone: S.zoneAt(x, y) };
@@ -1212,6 +1251,27 @@ process.on('SIGINT', shutdown);
 
 // ───────── 시작 ─────────
 // 예전 맵(버전 3, 64×48)이 있으면 지은 건물은 그대로 두고 숲·동굴만 붙여서 넓혀요.
+// 깬 퀘스트·도감 보상 중 오래 쓰는 물건(퀘스트 전용·도구·강아지·가구)이 가방·내 상자·맵·내 강아지 어디에도 없으면 돌려줄 목록에 넣어요.
+// (씨앗처럼 써서 없어지는 물건은 썼는지 잃었는지 알 수 없어서 빼요)
+const recoverable = (id) => { const d = S.ITEMS[id]; return !!d && !!(d.questOnly || d.tool || d.animal || (d.obj && d.cat === 'furniture')); };
+function computeRecover(pr) {
+  const expect = {};
+  const add = (items) => { for (const [id, n] of Object.entries(items || {})) if (recoverable(id)) expect[id] = (expect[id] || 0) + n; };
+  for (const q of S.QUESTS) if (pr.claimed.includes(q.id)) add(q.reward.items);
+  for (const c of S.COLLECTIONS) if (pr.colClaimed.includes(c.id)) add(c.reward.items);
+  for (const t of ['w', 'm']) for (const q of (pr.pq[t] ? pr.pq[t].list : [])) if (q.done) add(q.reward.items);
+  const k = pr.name.toLowerCase(), missing = {};
+  for (const [id, n] of Object.entries(expect)) {
+    const d = S.ITEMS[id];
+    let have = S.countItem(pr.inv, id);
+    for (const c of chests.values()) if (c.owner && c.owner.toLowerCase() === k) have += S.countItem(c.items, id);
+    if (d.obj) for (const o of world.objects.values()) if (o.t === d.obj) have++;
+    if (d.animal) for (const a of animals.values()) if (a.kind === d.animal && a.owner && a.owner.toLowerCase() === k) have++;
+    if (n > have) missing[id] = n - have;
+  }
+  return missing;
+}
+
 function migrateWorld(saved) {
   const ground = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) =>
     (y < saved.h && x < saved.w ? saved.ground[y][x] : 'grass')));
@@ -1244,7 +1304,19 @@ function migrateWorld(saved) {
     await saveData('profiles_backup_v4', profiles);
     console.log('💾 업데이트 전 프로필을 profiles_backup_v4 에 따로 보관했어요');
   }
-  for (const pr of Object.values(profiles)) ensureProfile(pr);
+  for (const pr of Object.values(profiles)) {
+    ensureProfile(pr);
+    // 한 번만: 예전에 가방이 꽉 차서 사라졌을 수 있는 보상 찾기 → 퀘스트 창 📮 에서 돌려받아요
+    if (!pr.recoverChecked) {
+      pr.recoverChecked = 1;
+      const m = computeRecover(pr);
+      if (Object.keys(m).length) {
+        pr.recover = Object.assign(pr.recover || {}, m);
+        console.log(`📮 ${pr.name} 님에게 돌려줄 보상:`, JSON.stringify(m));
+      }
+      profilesDirty = true;
+    }
+  }
   server.listen(PORT, () => {
     console.log(`📄 알PDF 서버 실행 중: http://localhost:${PORT}`);
     console.log(UP_URL && UP_TOKEN ? '☁️  Upstash 클라우드에 저장해요' : `💾 ${DATA_DIR} 폴더에 저장해요`);
