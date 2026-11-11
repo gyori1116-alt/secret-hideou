@@ -215,7 +215,13 @@
 
   // ───────── 물건 / 블록 / 가구 ─────────
   function drawObject(R, o, x, y, world) {
-    const sameT = (dx, dy) => { const n = oAt(world, x + dx, y + dy); return !!n && n.t === o.t; };
+    // 돌려놓은 가구는 "옆 칸"도 같이 돌려서 봐요 (옆으로 돌린 소파는 세로로 이어져요)
+    const rot = o.r || 0;
+    const sameT = (dx, dy) => {
+      for (let i = 0; i < rot; i++) [dx, dy] = [-dy, dx];
+      const n = oAt(world, x + dx, y + dy);
+      return !!n && n.t === o.t && (n.r || 0) === rot;
+    };
     if (S.WALLS[o.t]) { drawWall(R, o.t, x, y, world); return; }
     switch (o.t) {
       case 'tree':
@@ -586,6 +592,13 @@
         R('#c98a5a', 6, 6, 4, 6); R('#2b2233', 6, 8, 1, 1); R('#2b2233', 9, 8, 1, 1); R('#3b2f45', 7, 11, 2, 1);
         R('#e8d3a8', 3, 1, 1, 6); R('#e8d3a8', 12, 1, 1, 6); R('#e8d3a8', 1, 2, 2, 1); R('#e8d3a8', 13, 2, 2, 1); R('#e8d3a8', 4, 4, 2, 1); R('#e8d3a8', 10, 4, 2, 1);
         break;
+      case 'chest':
+        R('rgba(0,0,0,0.15)', 1, 14, 14, 2);
+        R('#7a4e2d', 1, 3, 14, 12); R('#a8743f', 2, 4, 12, 4); R('#c99558', 2, 4, 12, 1); R('#a8743f', 2, 9, 12, 5);
+        R('#5a3520', 1, 8, 14, 1); R('#5a3520', 4, 4, 1, 10); R('#5a3520', 11, 4, 1, 10);
+        if (o.locked) { R('#9aa7b0', 6, 6, 4, 5); R('#c4ced6', 7, 4, 2, 2); R('#2b2233', 7, 8, 2, 1); }
+        else { R('#ffd34d', 7, 7, 2, 3); R('#b58a12', 7, 9, 2, 1); }
+        break;
       case 'music_box':
         shadow(R, 10);
         R('#c0392b', 3, 6, 10, 8); R('#e74c3c', 3, 6, 10, 2); R('#ffd34d', 3, 9, 10, 1); R('#ffd34d', 13, 9, 2, 1); R('#ffd34d', 14, 7, 1, 3);
@@ -608,15 +621,42 @@
     }
   }
 
+  // 돌린 가구: 작은 캔버스에 앞모습을 그린 뒤 90°씩 돌려서 붙여요
+  const rotCanvas = document.createElement('canvas');
+  rotCanvas.width = rotCanvas.height = 16;
+  const rotCtx = rotCanvas.getContext('2d');
+  function drawRotated(g, ox, oy, r, paint) {
+    rotCtx.clearRect(0, 0, 16, 16);
+    paint(rotCtx);
+    g.save();
+    g.imageSmoothingEnabled = false;
+    g.translate(ox + 8, oy + 8);
+    g.rotate(r * Math.PI / 2);
+    g.drawImage(rotCanvas, -8, -8);
+    g.restore();
+  }
   function drawTile(g, ox, oy, x, y, world) {
     const R = pen(g, ox, oy);
     drawGround(R, world.g(x, y), x, y, world);
     const o = world.o(x, y);
-    if (o) drawObject(R, o, x, y, world);
+    if (!o) return;
+    if (o.r) drawRotated(g, ox, oy, o.r, (c) => drawObject(pen(c, 0, 0), o, x, y, world));
+    else drawObject(R, o, x, y, world);
+  }
+  // 놓기 미리보기 (방향 r)
+  function drawItemRot(g, ox, oy, id, r) {
+    if (!r) return drawItem(g, ox, oy, id);
+    drawRotated(g, ox, oy, r, (c) => drawItem(c, 0, 0, id));
   }
 
   // ───────── 움직이는 그림 (매 프레임 타일 위에 덧그려요) ─────────
   function drawAnim(g, o, ox, oy, t) {
+    if (o.r) {
+      g.save(); g.translate(ox + 8, oy + 8); g.rotate(o.r * Math.PI / 2);
+      drawAnim(g, Object.assign({}, o, { r: 0 }), -8, -8, t);
+      g.restore();
+      return;
+    }
     const R = pen(g, ox, oy);
     const f = Math.floor(t / 150);
     switch (o.t) {
@@ -1072,5 +1112,5 @@
     if (dir !== 'up' && opt.held) drawHeld(g, x, y + b, dir, opt.held);
   }
 
-  window.DRAW = { shade, drawTile, drawItem, drawChar, drawAnimal, drawGround, drawObject, drawAnim, hasAnim, lightOf, pen };
+  window.DRAW = { shade, drawTile, drawItem, drawItemRot, drawChar, drawAnimal, drawGround, drawObject, drawAnim, hasAnim, lightOf, pen };
 })();

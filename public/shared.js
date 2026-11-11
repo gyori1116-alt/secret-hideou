@@ -156,6 +156,7 @@
     shelf: { name: '책장', obj: 'shelf', cat: 'furniture', desc: '가구' },
     plant: { name: '화분', obj: 'plant', cat: 'furniture', desc: '가구' },
     teddy: { name: '곰인형', obj: 'teddy', cat: 'furniture', desc: '폭신폭신' },
+    chest: { name: '나무 상자', obj: 'chest', cat: 'furniture', desc: 'E로 열어서 아이템을 27칸 보관해요. 주인은 잠글 수 있어요' },
     tv: { name: '텔레비전', obj: 'tv', cat: 'furniture', desc: 'E로 켜고 꺼요 📺' },
     stand_lamp: { name: '스탠드 조명', obj: 'stand_lamp', cat: 'furniture', desc: 'E로 켜고 꺼요' },
     armchair: { name: '1인 소파', obj: 'armchair', cat: 'furniture', desc: 'E로 앉아요' },
@@ -263,6 +264,7 @@
     trophy: { solid: 1, msg: '반짝반짝 빛나는 트로피 🏆' }, cat_tower: { solid: 1, msg: '냥! 🐱' }, fountain: { solid: 1, anim: 1 },
     xmas_tree: { solid: 1, anim: 1 }, throne: { solid: 1, sit: 1 }, royal_bed: { solid: 1, lie: 1 }, statue: { solid: 1 },
     arcade: { solid: 1, toggle: 1, anim: 1 }, telescope: { solid: 1, msg: '반짝이는 별이 보여요 🌟' },
+    chest: { solid: 1, chest: 1 },
     crystal_lamp: { solid: 1, light: 5 }, scarecrow: { solid: 1 }, windmill: { solid: 1, anim: 1 }, deer_trophy: { solid: 1 },
     music_box: { solid: 1, fx: '🎶' },
   };
@@ -291,6 +293,10 @@
     if (it.obj) OBJ[it.obj] = Object.assign(OBJ[it.obj] || {}, { item: id });
   }
   const isSolidObj = (o) => !!o && !!(OBJ[o.t] && OBJ[o.t].solid) && !(OBJ[o.t].door && o.open);
+  // 돌릴 수 있는 것: 가구 (o.r = 시계 방향으로 90°씩 돌린 횟수, 0 앞 / 1 왼쪽 / 2 뒤 / 3 오른쪽)
+  const canRotate = (t) => !!OBJ[t] && !!OBJ[t].item && ITEMS[OBJ[t].item].cat === 'furniture';
+  const ROT_NAMES = ['앞', '왼쪽', '뒤', '오른쪽'];
+  const ROT_DIRS = ['down', 'left', 'up', 'right']; // 앉았을 때 바라보는 쪽
 
   // ───────── 작물 ─────────
   // 물을 주면 stageMs 뒤에 한 단계 자라고, 다시 물이 필요해요 (0 씨앗 → 3 다 자람)
@@ -344,7 +350,7 @@
       ['door_white', 20], ['floor_pink', 3], ['floor_check', 3], ['floor_mint', 4], ['floor_kitchen', 4], ['floor_herring', 5], ['floor_marble', 8],
       ['rug', 6], ['rug_green', 6], ['carpet_blue', 6]]],
     ['furni', '🛋️ 가구', [['plant', 25], ['cactus', 35], ['plant_big', 50], ['cushion', 30], ['beanbag', 70], ['armchair', 90], ['sofa', 60], ['bed', 80],
-      ['side_table', 45], ['picture', 40], ['clock', 60], ['display_shelf', 70], ['stand_lamp', 60], ['teddy', 100], ['tv', 300], ['computer', 400], ['bench', 50]]],
+      ['side_table', 45], ['picture', 40], ['clock', 60], ['display_shelf', 70], ['stand_lamp', 60], ['teddy', 100], ['tv', 300], ['computer', 400], ['bench', 50], ['chest', 40]]],
     ['kitchen', '🍳 주방', [['stove', 200], ['fridge', 250], ['sink', 150], ['counter', 40], ['microwave', 120], ['dish_rack', 50], ['kitchen_shelf', 60], ['floor_kitchen', 4]]],
     ['bath', '🛁 욕실', [['toilet', 120], ['bathtub', 220], ['washbasin', 100], ['shower', 180], ['mirror', 70], ['towel_rack', 40], ['washer', 260], ['bath_shelf', 50], ['floor_bath', 4]]],
     ['animal', '🐶 동물·도구', [['animal_chicken', 80], ['animal_sheep', 180], ['animal_cow', 250], ['pet_dog', 400], ['pet_dog_white', 600], ['bow', 120]]],
@@ -390,6 +396,7 @@
     { out: 'washbasin', n: 1, need: { stone: 3 } },
     { out: 'bathtub', n: 1, need: { stone: 5, iron: 1 } },
     { out: 'stand_lamp', n: 1, need: { iron: 1, wood: 1 } },
+    { out: 'chest', n: 1, need: { wood: 8 } },
   ];
 
   // ───────── 요리 (가스레인지·전자레인지·모닥불·벽난로 앞에서 E) ─────────
@@ -616,6 +623,7 @@
 
   // ───────── 가방 (36칸, 앞 9칸 = 단축바) ─────────
   const INV_SIZE = 36;
+  const CHEST_SIZE = 27;              // 나무 상자 칸 수
   function starterInventory() {
     const inv = new Array(INV_SIZE).fill(null);
     [['hoe', 1], ['can', 1], ['rod', 1], ['seed_carrot', 6], ['wood', 12], ['path', 10], ['sign', 1], ['wall_wood', 8], ['floor_wood', 8]]
@@ -847,11 +855,11 @@
 
   const SHARED = {
     TILE, OW, OH, W, H, CY, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
-    hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, MAX_PETS, zoneAt,
+    hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, MAX_PETS, zoneAt,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,
     SKINS, HAIR_STYLES, HAIR_COLORS, EYES, TOPS, CLOTH, ACCESSORIES, BACKS, COSMETICS, COSMETIC_SRC, isLocked, FREE_ACC,
-    defaultAvatar, sanitizeAvatar, INV_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, generateWorld, expandWorld,
+    defaultAvatar, sanitizeAvatar, INV_SIZE, CHEST_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, generateWorld, expandWorld,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = SHARED;
   else root.SHARED = SHARED;

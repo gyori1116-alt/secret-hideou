@@ -169,6 +169,7 @@
   let my = null;              // 내 코인, 가방, 퀘스트 기록, 아바타, 도감
   let clockSkew = 0;          // 서버 시간 - 내 시간
   let sel = 0;
+  let placeRot = 0;           // 가구 놓을 방향 (R로 돌려요)
   let fishing = null;
   let buffUntil = 0;
   const players = {};
@@ -337,7 +338,7 @@
     if (players[myId]) players[myId].avatar = d.avatar;
     renderHotbar();
     updateQuestBadge();
-    if (['bag', 'shop', 'quests', 'cook', 'col', 'trade'].includes(modal)) renderModal();
+    if (['bag', 'shop', 'quests', 'cook', 'col', 'trade', 'chest'].includes(modal)) renderModal();
   });
 
   socket.on('tiles', (list) => { if (world.ground) list.forEach(applyTile); });
@@ -382,6 +383,14 @@
   socket.on('editSign', ({ x, y }) => setTimeout(() => openModal('sign', { x, y }), 120));
   socket.on('fishBite', () => { if (fishing) fishing.bite = true; });
   socket.on('fishResult', (r) => { fishing = null; showToast(r.text, r.item); });
+
+  // 상자
+  let chest = null;
+  socket.on('chest', (c) => {
+    chest = c;
+    if (!c) { if (modal === 'chest') closeModal(); return; }
+    if (modal !== 'chest') openModal('chest'); else renderModal();
+  });
 
   // 거래
   let trade = null, tradeAskFrom = null;
@@ -477,7 +486,8 @@
     socket.emit('sel', { slot: sel });
     const it = my && my.inv[sel];
     const box = $('itemName');
-    box.textContent = it ? `${itemName(it.id)} — ${S.ITEMS[it.id].desc || ''}` : '빈 손 (Space = 상호작용)';
+    const rotTip = it && S.ITEMS[it.id].obj && S.canRotate(S.ITEMS[it.id].obj) ? ` (R = 방향 돌리기, 지금: ${S.ROT_NAMES[placeRot]})` : '';
+    box.textContent = it ? `${itemName(it.id)} — ${S.ITEMS[it.id].desc || ''}${rotTip}` : '빈 손 (Space = 상호작용)';
     box.style.opacity = 1;
     clearTimeout(nameTimer);
     nameTimer = setTimeout(() => { box.style.opacity = 0; }, 2400);
@@ -506,7 +516,20 @@
     }
     const an = animalAt(target.x, target.y);
     if (an && isMyPet(an) && !S.FEED.includes(it.id)) { openModal('pet', an.id); return; }
-    socket.emit('act', { type: 'use', slot: sel, x: target.x, y: target.y });
+    socket.emit('act', { type: 'use', slot: sel, x: target.x, y: target.y, r: def.obj && S.canRotate(def.obj) ? placeRot : 0 });
+  }
+  // R: 가구를 들고 있으면 놓을 방향 돌리기, 아니면 바라보는 가구 돌리기
+  function doRotate() {
+    if (!my) return;
+    const it = my.inv[sel], def = it && S.ITEMS[it.id];
+    if (def && def.obj && S.canRotate(def.obj)) {
+      placeRot = (placeRot + 1) % 4;
+      showToast(`↻ 놓을 방향: ${S.ROT_NAMES[placeRot]}`, it.id);
+      return;
+    }
+    const o = world.o(target.x, target.y);
+    if (o && S.canRotate(o.t)) socket.emit('rotate', { x: target.x, y: target.y });
+    else showToast('가구를 들거나, 놓아둔 가구를 바라보고 R을 눌러요');
   }
   function doInteract() {
     const an = animalAt(target.x, target.y);
@@ -550,7 +573,8 @@
     if (/^Digit[1-9]$/.test(e.code)) { selectSlot(+e.code.slice(5) - 1); return; }
     if (MODAL_KEYS[e.code]) { openModal(MODAL_KEYS[e.code]); return; }
     if (e.code === 'KeyM') { $('mmWrap').classList.toggle('hidden'); return; }
-    if (['Space', 'KeyE', 'KeyF', 'KeyX'].includes(e.code)) target = computeTarget();
+    if (['Space', 'KeyE', 'KeyF', 'KeyX', 'KeyR'].includes(e.code)) target = computeTarget();
+    if (e.code === 'KeyR') { if (!e.repeat) doRotate(); return; }
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) doUse(); return; }
     if (e.code === 'KeyE' || e.code === 'KeyF') { if (!e.repeat) doInteract(); return; }
     if (e.code === 'KeyX') { if (!e.repeat) doBreak(); return; }
@@ -603,6 +627,7 @@
   }
   function closeModal() {
     if (modal === 'trade' && trade) socket.emit('tradeCancel');
+    if (modal === 'chest') { socket.emit('chestClose'); chest = null; }
     modal = null;
     clearInterval(avTimer); avTimer = null; avDraft = null;
     $('modal').classList.add('hidden');
@@ -617,7 +642,7 @@
     const scroll = body.scrollTop;
     body.innerHTML = '';
     ({ bag: renderBag, shop: renderShop, quests: renderQuests, avatar: renderAvatar, sign: renderSign, help: renderHelp,
-      cook: renderCook, col: renderCol, pet: renderPet, trade: renderTrade })[modal](body);
+      cook: renderCook, col: renderCol, pet: renderPet, trade: renderTrade, chest: renderChest })[modal](body);
     body.scrollTop = scroll;
   }
   const tabs = (cur, list, onPick) => el('div', { class: 'tabs' },
@@ -829,6 +854,33 @@
         el('small', { style: 'opacity:.6;display:block;margin-top:8px' }, '집에 두고 싶으면 집 안에서 "여기서 지내"를 눌러요. 내가 나가면 강아지도 집으로 돌아가요.'))));
   }
 
+  function renderChest(body) {
+    if (!chest) { closeModal(); return; }
+    const { x, y } = chest;
+    $('modalTitle').textContent = `📦 나무 상자${chest.owner ? ` (${chest.owner} 님)` : ''}${chest.locked ? ' 🔒' : ''}`;
+    const cell = (it, i, from, extraCls) => el('div', {
+      class: 'slot' + (extraCls || '') + (it && S.ITEMS[it.id] && S.ITEMS[it.id].questOnly ? ' qo' : ''),
+      title: it ? `${itemName(it.id)} ×${it.n} — 누르면 ${from === 'inv' ? '상자에 넣어요' : '가방으로 꺼내요'}` : '',
+      onclick: () => { if (it) socket.emit('chestMove', { x, y, from, slot: i }); },
+    }, from === 'inv' && i < 9 ? el('span', { class: 'k' }, i + 1) : null, it ? iconImg(it.id) : null, it && it.n > 1 ? el('span', { class: 'n' }, it.n) : null);
+    const used = chest.items.filter(Boolean).length;
+    body.append(
+      el('div', { class: 'chesthead' },
+        el('b', {}, `📦 상자 (${used} / ${S.CHEST_SIZE}칸)`),
+        el('span', { class: 'pick-row' },
+          el('button', { class: 'btn', onclick: () => socket.emit('chestAll', { x, y, dir: 'out' }) }, '⬇️ 모두 꺼내기'),
+          chest.mine ? el('button', { class: 'btn', onclick: () => socket.emit('chestLock', { x, y }) }, chest.locked ? '🔓 잠금 풀기' : '🔒 잠그기') : null)),
+      el('div', { class: 'grid chestgrid' }, chest.items.map((it, i) => cell(it, i, 'chest'))),
+      el('div', { class: 'chesthead', style: 'margin-top:14px' },
+        el('b', {}, '🎒 내 가방'),
+        el('button', { class: 'btn pink', onclick: () => socket.emit('chestAll', { x, y, dir: 'in' }) }, '⬆️ 모두 넣기 (단축바 빼고)')),
+      el('div', { class: 'grid' }, my.inv.map((it, i) => cell(it, i, 'inv', i < 9 ? ' hb' : ''))),
+      el('p', { class: 'note', style: 'margin-top:10px' },
+        '💡 칸을 누르면 그 묶음이 통째로 옮겨져요. ',
+        chest.mine ? '🔒 잠그면 나만 열 수 있어요.' : '이 상자는 다른 사람 거예요. ✨퀘스트 전용 아이템은 주인만 꺼낼 수 있어요.',
+        ' 빈 상자는 X로 회수해요.'));
+  }
+
   function renderTrade(body) {
     if (!trade) { closeModal(); return; }
     $('modalTitle').textContent = `🤝 ${trade.other} 님과 거래`;
@@ -939,6 +991,7 @@
       k('Space / 왼쪽 클릭', '고른 아이템 쓰기 — 블록 놓기, 밭 갈기, 씨앗, 물 주기, 낚시, 음식 먹기'),
       k('E / 빈 손 Space', '상호작용 — 상점, 게시판, 문, 수확, 앉기·눕기, TV 켜기, 요리, 버섯 따기'),
       k('X / 오른쪽 클릭', '부수기·줍기 — 나무 베기, 바위·광석 캐기, 놓은 블록 회수'),
+      k('R', '가구 돌리기 — 가구를 들고 누르면 놓을 방향, 놓은 가구를 보고 누르면 그 자리에서 회전'),
       k('I', '가방 (자리 바꾸기, 🔨 만들기)'),
       k('C', '꾸미기 (머리, 얼굴, 옷, 머리 장식, 등)'),
       k('Q', '퀘스트 (일간·주간·월간·업적)'),
@@ -949,6 +1002,7 @@
       el('p', { style: 'font-size:12px;line-height:1.8;margin:14px 0 0' },
         '🗺️ 마을 오른쪽 길 → 🌲 숲 (나무·버섯·산딸기·사슴·송어), 마을 아래 → 🏡 집 짓는 들판 (넓은 빈 땅), 들판 아래 → ⛏ 동굴 (돌·철·금·수정·동굴어)', el('br'),
         '🍳 요리: 가스레인지·전자레인지·모닥불·벽난로 앞에서 E. 숲 캠프에 모닥불이 있어요', el('br'),
+        '📦 상자: 만들기(나무 8개)나 상점에서 구해서 놓고 E로 열어요. 27칸 보관, 주인은 잠글 수 있어요', el('br'),
         '📖 도감: 처음 얻은 물고기·작물·요리·광석 등이 등록돼요. 다 모으면 특별 보상', el('br'),
         '🐶 강아지: 상점에서 사서 Space로 꺼내요. E로 따라오기/집에 두기', el('br'),
         '🤝 거래: 오른쪽 접속자 목록의 🤝 버튼으로 신청해요 (✨퀘스트 전용 아이템은 거래 불가)', el('br'),
@@ -1081,6 +1135,12 @@
     }
     const o = world.o(x, y);
     if (!o) return null;
+    const h = baseHint(o);
+    const it = my.inv[sel], held = it && S.ITEMS[it.id];
+    if (S.canRotate(o.t) && !(held && held.obj && S.canRotate(held.obj))) return h ? `${h} · R 돌리기` : 'R 돌리기 ↻';
+    return h;
+  }
+  function baseHint(o) {
     const od = S.OBJ[o.t] || {};
     if (o.t === 'shop') return 'E 상점';
     if (o.t === 'board') return 'E 퀘스트';
@@ -1089,6 +1149,7 @@
     if (o.t === 'crop' && o.stage >= 3) return 'E 수확';
     if (o.t === 'crop' && !o.water) return '💧 물 필요';
     if (od.cook) return 'E 요리 🍳';
+    if (od.chest) return o.locked ? 'E 상자 열기 🔒' : 'E 상자 열기 📦';
     if (od.pick) return 'E 따기';
     if (o.at && o.back) return '🌱 다시 자라는 중';
     if (od.lie) return 'E 눕기';
@@ -1102,17 +1163,22 @@
   const LIE_COVER = { bed: '#9b8cff', royal_bed: '#ff8fab', bathtub: '#8fd3ff' };
   function drawPlayer(p, now) {
     const [x, y] = charPos(p);
+    const seat = p.pose ? world.o(p.pose.x, p.pose.y) : null;
+    const rot = (seat && seat.r) || 0;
     if (p.pose && p.pose.k === 'lie') {
-      D.drawChar(ctx, x, y, p.avatar || {}, 'down', -1, { sleep: true });
-      const o = world.o(p.pose.x, p.pose.y);
-      const c = LIE_COVER[o && o.t] || '#9b8cff';
-      const tx = p.pose.x * TILE, ty = p.pose.y * TILE;
-      ctx.fillStyle = c; ctx.fillRect(tx + 1, ty + 7, 14, 9);
-      ctx.fillStyle = D.shade(c, 0.25); ctx.fillRect(tx + 1, ty + 7, 14, 1);
+      // 침대 방향대로 돌려서 그려요 (머리는 베개 쪽)
+      const c = LIE_COVER[seat && seat.t] || '#9b8cff';
+      ctx.save();
+      ctx.translate(p.pose.x * TILE + 8, p.pose.y * TILE + 8);
+      ctx.rotate(rot * Math.PI / 2);
+      D.drawChar(ctx, 0, 13, p.avatar || {}, 'down', -1, { sleep: true });
+      ctx.fillStyle = c; ctx.fillRect(-7, -1, 14, 9);
+      ctx.fillStyle = D.shade(c, 0.25); ctx.fillRect(-7, -1, 14, 1);
+      ctx.restore();
       return;
     }
     const step = p.moving ? Math.floor(now / 140) % 2 : -1;
-    D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? 'down' : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose });
+    D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? S.ROT_DIRS[rot] : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose });
   }
 
   function drawDarkness(now) {
@@ -1172,7 +1238,7 @@
       const def = it && S.ITEMS[it.id];
       if (def && (def.ground || def.obj) && !world.o(target.x, target.y) && world.g(target.x, target.y) !== 'water') {
         ctx.globalAlpha = 0.5;
-        D.drawItem(ctx, target.x * TILE, target.y * TILE, it.id);
+        D.drawItemRot(ctx, target.x * TILE, target.y * TILE, it.id, def.obj && S.canRotate(def.obj) ? placeRot : 0);
         ctx.globalAlpha = 1;
       }
       ctx.strokeStyle = 'rgba(255,255,255,0.95)';

@@ -157,6 +157,9 @@
     textarea { width: 100%; font: inherit; font-size: 15px; padding: 10px; border: 3px solid var(--ink); resize: none; outline: none; }
     .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
     .keys kbd { background: #fff; border: 2px solid var(--ink); padding: 1px 6px; font-family: inherit; font-size: 12px; white-space: nowrap; justify-self: start; }
+    .chesthead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; flex-wrap: wrap; }
+    .chesthead .btn { font-size: 12px; padding: 3px 8px; }
+    .chestgrid .slot { background: #f6ead8; border-color: #b88252; }
     .petbox { display: flex; gap: 14px; align-items: flex-start; font-size: 13px; }
     .petbox .grow { flex: 1; }
     .petpic canvas { width: 96px; height: 96px; background: #8fd16f; border: 3px solid var(--ink); }
@@ -244,8 +247,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=4"></script>
-  <script src="draw.js?v=4"></script>
-  <script src="client.js?v=4"></script>
+  <script src="shared.js?v=6"></script>
+  <script src="draw.js?v=6"></script>
+  <script src="client.js?v=6"></script>
 </body>
 </html>

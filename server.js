@@ -45,6 +45,7 @@ async function saveData(key, obj) {
 
 // ───────── 월드 ─────────
 let world = null;           // { ground: string[][], objects: Map<"x,y", obj> }
+let chests = new Map();     // "x,y" -> { items: [], owner, locked } (상자 안 물건은 서버만 알고, 연 사람에게만 보내요)
 let profiles = {};          // 이름(소문자) -> 프로필
 let worldDirty = false, profilesDirty = false;
 const pending = new Map();  // 바뀐 타일 (모두에게 보낼 것)
@@ -59,7 +60,7 @@ function setTile(x, y, g, o) {
   worldDirty = true;
 }
 const serializeWorld = () => ({
-  version: S.WORLD_VERSION, w: W, h: H, ground: world.ground, objects: Object.fromEntries(world.objects),
+  version: S.WORLD_VERSION, w: W, h: H, ground: world.ground, objects: Object.fromEntries(world.objects), chests: Object.fromEntries(chests),
   animals: [...animals.values()].filter((a) => !S.ANIMALS[a.kind].wild)
     .map((a) => ({ kind: a.kind, x: a.x, y: a.y, hx: a.hx, hy: a.hy, fed: a.fed, ready: a.ready, readyAt: a.readyAt, owner: a.owner, mode: a.mode, pname: a.pname })),
 });
@@ -241,6 +242,52 @@ function nearStation(p) {
   }
   return false;
 }
+// ───────── 상자 ─────────
+function getChest(x, y) {
+  const k = key(x, y), o = getO(x, y);
+  if (!o || o.t !== 'chest') return null;
+  let c = chests.get(k);
+  if (!c) { c = { items: new Array(S.CHEST_SIZE).fill(null), owner: null, locked: false }; chests.set(k, c); }
+  return c;
+}
+const chestMine = (p, c) => !c.owner || c.owner.toLowerCase() === p.key;
+function chestView(p, x, y) {
+  const c = getChest(x, y);
+  return c ? { x, y, items: c.items, owner: c.owner, locked: c.locked, mine: chestMine(p, c) } : null;
+}
+// 그 상자를 열어둔 사람 모두에게 새 내용 보내기
+function sendChest(x, y) {
+  const k = key(x, y);
+  for (const q of Object.values(players)) if (q.viewChest === k) q.socket.emit('chest', chestView(q, x, y));
+}
+function openChest(p, x, y) {
+  const c = getChest(x, y);
+  if (!c) return null;
+  if (c.locked && !chestMine(p, c)) return `🔒 ${c.owner} 님이 잠근 상자예요`;
+  p.viewChest = key(x, y);
+  p.socket.emit('chest', chestView(p, x, y));
+  return null;
+}
+// 상자 조작 전에: 열어둔 상자가 맞는지, 손이 닿는지, 잠기지 않았는지
+function usableChest(p, x, y) {
+  x |= 0; y |= 0;
+  if (!inMap(x, y) || p.viewChest !== key(x, y)) return null;
+  const c = getChest(x, y);
+  if (!c) return null;
+  if (!inReach(p, x, y, TILE * 2)) { toast(p.socket, '상자에 더 가까이 가주세요'); return null; }
+  if (c.locked && !chestMine(p, c)) return null;
+  return c;
+}
+// from 칸의 묶음을 to 로 옮기기 (못 들어간 만큼은 그대로)
+function moveStack(fromArr, slot, toArr) {
+  const it = fromArr[slot];
+  if (!it) return 0;
+  const left = S.addItem(toArr, it.id, it.n);
+  const moved = it.n - left;
+  fromArr[slot] = left > 0 ? { id: it.id, n: left } : null;
+  return moved;
+}
+
 const kstTime = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
 
 // ───────── 블록 놓기 / 부수기 / 상호작용 ─────────
@@ -326,7 +373,7 @@ function waterCrop(x, y) {
   return true;
 }
 
-function handleAct(p, type, x, y, slot) {
+function handleAct(p, type, x, y, slot, rot) {
   const g = world.ground[y][x];
   const o = getO(x, y);
   const od = (o && S.OBJ[o.t]) || {};
@@ -340,6 +387,13 @@ function handleAct(p, type, x, y, slot) {
   if (type === 'break') {
     if (o) {
       if (od.fixed || o.fixed) return '이건 부술 수 없어요';
+      if (o.t === 'chest') {
+        const c = getChest(x, y);
+        if (c.locked && !chestMine(p, c)) return `🔒 ${c.owner} 님이 잠근 상자예요`;
+        if (c.items.some(Boolean)) return '상자를 먼저 비워주세요 📦';
+        chests.delete(key(x, y));
+        for (const q of Object.values(players)) if (q.viewChest === key(x, y)) { q.viewChest = null; q.socket.emit('chest', null); }
+      }
       if (o.t === 'crop') {
         setTile(x, y, undefined, null);
         if (o.stage === 0) give(p, S.CROPS[o.kind].seed, 1, true);
@@ -380,6 +434,7 @@ function handleAct(p, type, x, y, slot) {
     }
     if (od.pick) return pickAt(p, x, y, o, od);
     if (o.at && o.back) return '다시 자라는 중이에요 🌱';
+    if (od.chest) return openChest(p, x, y);
     if (od.sit || od.lie) {
       const k = od.lie ? 'lie' : 'sit';
       if (Object.values(players).some((q) => q !== p && q.pose && q.pose.x === x && q.pose.y === y)) return '누가 먼저 쓰고 있어요!';
@@ -480,7 +535,9 @@ function handleAct(p, type, x, y, slot) {
       const obj = { t: def.obj };
       if (def.obj === 'sapling') obj.at = Date.now() + S.SAPLING_MS;
       if (def.obj === 'sign') obj.text = '';
+      if (rot && S.canRotate(def.obj)) obj.r = rot;
       setTile(x, y, undefined, obj);
+      if (def.obj === 'chest') chests.set(key(x, y), { items: new Array(S.CHEST_SIZE).fill(null), owner: p.prof.name, locked: false });
       take();
       if (def.cat === 'wall') stat(p, 'wallPlaced');
       if (def.cat === 'furniture') stat(p, 'furniturePlaced');
@@ -627,9 +684,26 @@ io.on('connection', (socket) => {
     if (!inMap(x, y) || slot < 0 || slot >= S.INV_SIZE) return;
     if (!['use', 'break', 'interact'].includes(a.type)) return;
     if (!inReach(p, x, y, 8)) return toast(socket, '너무 멀어요');
-    const msg = handleAct(p, a.type, x, y, slot);
+    const rot = Number.isInteger(a.r) && a.r >= 0 && a.r < 4 ? a.r : 0;
+    const msg = handleAct(p, a.type, x, y, slot, rot);
     if (msg) toast(socket, msg);
     sendMe(p);
+  });
+
+  // 놓아둔 가구 돌리기 (R)
+  socket.on('rotate', ({ x, y } = {}) => {
+    const p = me();
+    x |= 0; y |= 0;
+    if (!p || !inMap(x, y)) return;
+    const o = getO(x, y);
+    if (!o || !S.canRotate(o.t)) return;
+    if (!inReach(p, x, y, 8)) return toast(socket, '너무 멀어요');
+    if (o.t === 'chest') { const c = getChest(x, y); if (c.locked && !chestMine(p, c)) return toast(socket, `🔒 ${c.owner} 님이 잠근 상자예요`); }
+    if (Object.values(players).some((q) => q.pose && q.pose.x === x && q.pose.y === y)) return toast(socket, '누가 쓰고 있어요!');
+    const r = ((o.r || 0) + 1) % 4;
+    const n = Object.assign({}, o);
+    if (r) n.r = r; else delete n.r;
+    setTile(x, y, undefined, n);
   });
 
   socket.on('petCmd', ({ id, cmd, name } = {}) => {
@@ -655,6 +729,54 @@ io.on('connection', (socket) => {
     }
     animalsDirty = worldDirty = true;
   });
+
+  // 상자: 칸 하나 옮기기 / 모두 넣기·꺼내기 / 잠그기 / 닫기
+  socket.on('chestMove', ({ x, y, from, slot } = {}) => {
+    const p = me();
+    const c = p && usableChest(p, x, y);
+    if (!c || !Number.isInteger(slot)) return;
+    if (from === 'inv' && slot >= 0 && slot < S.INV_SIZE) {
+      if (!moveStack(p.prof.inv, slot, c.items)) toast(socket, '상자가 가득 찼어요 📦');
+    } else if (from === 'chest' && slot >= 0 && slot < S.CHEST_SIZE) {
+      const it = c.items[slot];
+      if (it && S.ITEMS[it.id] && S.ITEMS[it.id].questOnly && !chestMine(p, c)) return toast(socket, '✨퀘스트 전용 아이템은 상자 주인만 꺼낼 수 있어요');
+      if (!moveStack(c.items, slot, p.prof.inv)) toast(socket, '가방이 가득 찼어요 🎒');
+    } else return;
+    worldDirty = true;
+    sendChest(x | 0, y | 0);
+    sendMe(p);
+  });
+  socket.on('chestAll', ({ x, y, dir } = {}) => {
+    const p = me();
+    const c = p && usableChest(p, x, y);
+    if (!c) return;
+    let n = 0;
+    if (dir === 'in') { for (let i = 9; i < S.INV_SIZE; i++) n += moveStack(p.prof.inv, i, c.items); } // 단축바(1~9)는 남겨요
+    else if (dir === 'out') {
+      for (let i = 0; i < S.CHEST_SIZE; i++) {
+        const it = c.items[i];
+        if (it && S.ITEMS[it.id] && S.ITEMS[it.id].questOnly && !chestMine(p, c)) continue;
+        n += moveStack(c.items, i, p.prof.inv);
+      }
+    } else return;
+    toast(socket, n ? (dir === 'in' ? `📦 ${n}개를 상자에 넣었어요 (단축바는 그대로)` : `🎒 ${n}개를 꺼냈어요`) : (dir === 'in' ? '넣을 수 없어요 (상자가 가득 찼거나 가방이 비었어요)' : '꺼낼 수 없어요 (가방이 가득 찼거나 상자가 비었어요)'));
+    worldDirty = true;
+    sendChest(x | 0, y | 0);
+    sendMe(p);
+  });
+  socket.on('chestLock', ({ x, y } = {}) => {
+    const p = me();
+    const c = p && usableChest(p, x, y);
+    if (!c) return;
+    if (!c.owner) c.owner = p.prof.name; // 주인 없는 상자는 처음 잠근 사람이 주인
+    if (!chestMine(p, c)) return toast(socket, '상자 주인만 잠글 수 있어요');
+    c.locked = !c.locked;
+    x |= 0; y |= 0;
+    setTile(x, y, undefined, Object.assign({}, getO(x, y), { locked: c.locked }));
+    toast(socket, c.locked ? '🔒 잠갔어요. 이제 나만 열 수 있어요' : '🔓 잠금을 풀었어요. 누구나 열 수 있어요');
+    sendChest(x, y);
+  });
+  socket.on('chestClose', () => { const p = me(); if (p) p.viewChest = null; });
 
   socket.on('swap', ({ a, b } = {}) => {
     const p = me();
@@ -1101,6 +1223,7 @@ function migrateWorld(saved) {
   const saved = process.env.RESET_WORLD ? null : await loadData('world');
   if (saved && saved.version === S.WORLD_VERSION && saved.w === W && saved.h === H) {
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
+    chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
     console.log('🗺️  저장된 맵을 불러왔어요');
   } else if (saved && saved.version === 3 && saved.w === S.OW && saved.h === S.OH) {
