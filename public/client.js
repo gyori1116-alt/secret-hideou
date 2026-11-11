@@ -1,4 +1,4 @@
-// 비밀 아지트 - 게임 화면 (이동, 건축, 농사, 낚시, 가방, 상점, 퀘스트, 꾸미기, 채팅)
+// 알PDF - 게임 화면 (이동, 건축, 농사, 낚시, 요리, 가방, 상점, 퀘스트, 도감, 꾸미기, 거래, 강아지, 미니맵, 채팅)
 (() => {
   'use strict';
   const S = window.SHARED, D = window.DRAW;
@@ -29,10 +29,10 @@
   const world = {
     ground: null,
     objects: new Map(),
-    g(x, y) { return this.ground && x >= 0 && y >= 0 && x < W && y < H ? this.ground[y][x] : null; },
+    g(x, y) { return this.ground && x >= 0 && y >= 0 && x < W && y < H && this.ground[y] ? this.ground[y][x] : null; },
     o(x, y) { return this.objects.get(x + ',' + y) || null; },
   };
-  const signs = new Set();
+  const signs = new Set(), anims = new Set(), lights = new Set();
   const mapCanvas = document.createElement('canvas');
   mapCanvas.width = W * TILE; mapCanvas.height = H * TILE;
   const mctx = mapCanvas.getContext('2d');
@@ -42,13 +42,19 @@
     mctx.clearRect(x * TILE, y * TILE, TILE, TILE);
     D.drawTile(mctx, x * TILE, y * TILE, x, y, world);
   }
-  function redrawAll() { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) redraw(x, y); }
+  function indexTile(k, o) {
+    if (o && o.t === 'sign') signs.add(k); else signs.delete(k);
+    if (D.hasAnim(o)) anims.add(k); else anims.delete(k);
+    if (o && S.OBJ[o.t] && S.OBJ[o.t].light) lights.add(k); else lights.delete(k);
+  }
+  function redrawAll() { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { redraw(x, y); mmPixel(x, y); } }
   function applyTile(t) {
     const k = t.x + ',' + t.y;
     world.ground[t.y][t.x] = t.g;
     if (t.o) world.objects.set(k, t.o); else world.objects.delete(k);
-    if (t.o && t.o.t === 'sign') signs.add(k); else signs.delete(k);
+    indexTile(k, t.o);
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) redraw(t.x + dx, t.y + dy);
+    mmPixel(t.x, t.y);
   }
 
   const isSolidAt = (px, py) => {
@@ -58,63 +64,147 @@
   };
   const blocked = (x, y) => isSolidAt(x - 4, y - 3) || isSolidAt(x + 4, y - 3) || isSolidAt(x - 4, y) || isSolidAt(x + 4, y);
 
+  // ───────── 미니맵 (오른쪽 위) ─────────
+  const mmBase = document.createElement('canvas');
+  mmBase.width = W; mmBase.height = H;
+  const mmb = mmBase.getContext('2d');
+  const mm = $('minimap'), mmx = mm.getContext('2d');
+  const MM_GROUND = {
+    grass: '#8fd16f', forest: '#6aae55', water: '#63bde8', sand: '#f3e3b3', farm: '#9b6a43', path: '#efdcab', stone_path: '#d3cdc3',
+    brick_path: '#de9474', cave: '#5a5162',
+  };
+  function mmColor(x, y) {
+    const o = world.o(x, y), g = world.g(x, y);
+    if (o) {
+      if (o.t === 'tree' || o.t === 'pine') return o.fixed ? '#2f7236' : '#3f8f45';
+      if (o.t === 'cave_wall') return '#2a2430';
+      if (o.t === 'rock' || o.t === 'pebble') return '#a8a49e';
+      if (o.t === 'ore_iron') return '#d98c5f';
+      if (o.t === 'ore_gold') return '#ffd34d';
+      if (o.t === 'crystal') return '#b48cff';
+      if (o.t === 'shop') return '#ff5c8a';
+      if (o.t === 'board') return '#ffb36b';
+      if (o.t === 'crop') return '#7ed492';
+      if (o.t === 'campfire' || o.t === 'torch') return '#ff9a2e';
+      if (S.WALLS[o.t] || (S.OBJ[o.t] && S.OBJ[o.t].wall)) return S.WALLS[o.t] ? S.WALLS[o.t][2] : '#8b5a3c';
+      if (o.t === 'flower' || o.t === 'sprout' || o.t === 'stump' || o.t === 'sapling') return MM_GROUND[g] || '#8fd16f';
+      if (o.t === 'fence') return '#c99558';
+      return '#d9a066';
+    }
+    return MM_GROUND[g] || (S.GROUND[g] && S.GROUND[g].item ? '#e8d3b8' : '#8fd16f');
+  }
+  function mmPixel(x, y) { mmb.fillStyle = mmColor(x, y); mmb.fillRect(x, y, 1, 1); }
+  let mmBig = false;
+  function mmSize() {
+    const cssW = mmBig ? 300 : 160;
+    mm.style.width = cssW + 'px'; mm.style.height = Math.round(cssW * H / W) + 'px';
+    mm.width = Math.round(cssW * dpr); mm.height = Math.round(cssW * H / W * dpr);
+  }
+  mm.addEventListener('click', () => { mmBig = !mmBig; mmSize(); });
+  function drawMinimap(now) {
+    if (!world.ground || $('mmWrap').classList.contains('hidden')) return;
+    const w = mm.width, h = mm.height, sx = w / W, sy = h / H;
+    mmx.imageSmoothingEnabled = false;
+    mmx.drawImage(mmBase, 0, 0, w, h);
+    // 지금 보이는 화면 범위
+    const vw = canvas.width / Sc, vh = canvas.height / Sc;
+    mmx.strokeStyle = 'rgba(255,255,255,0.9)'; mmx.lineWidth = Math.max(1, dpr);
+    mmx.strokeRect(cam.x / TILE * sx, cam.y / TILE * sy, vw / TILE * sx, vh / TILE * sy);
+    // 다른 사람: 작은 점
+    for (const [id, p] of Object.entries(players)) {
+      if (id === myId) continue;
+      mmx.fillStyle = S.CLOTH[p.avatar ? p.avatar.tc : 0];
+      mmx.strokeStyle = '#4a3b5c'; mmx.lineWidth = dpr;
+      mmx.beginPath(); mmx.arc(p.dx / TILE * sx, p.dy / TILE * sy, 3 * dpr, 0, Math.PI * 2); mmx.fill(); mmx.stroke();
+    }
+    // 나: 빨간 원 (반짝)
+    if (myId) {
+      const px = me.x / TILE * sx, py = me.y / TILE * sy;
+      const pulse = 1 + 0.25 * Math.sin(now / 250);
+      mmx.fillStyle = 'rgba(255,59,92,0.25)';
+      mmx.beginPath(); mmx.arc(px, py, 8 * dpr * pulse, 0, Math.PI * 2); mmx.fill();
+      mmx.fillStyle = '#ff3b5c'; mmx.strokeStyle = '#ffffff'; mmx.lineWidth = 2 * dpr;
+      mmx.beginPath(); mmx.arc(px, py, 4.5 * dpr, 0, Math.PI * 2); mmx.fill(); mmx.stroke();
+    }
+    // 지역 이름
+    mmx.font = `${10 * dpr}px ${FONT}`; mmx.textAlign = 'center'; mmx.textBaseline = 'middle';
+    mmx.fillStyle = 'rgba(255,255,255,0.85)';
+    mmx.fillText('🌲 숲', (S.OW + (W - S.OW) / 2) * sx, 4 * sy);
+    mmx.fillText('🏡 집 짓는 들판', W / 2 * sx, (S.OH + 4) * sy);
+    mmx.fillText('⛏ 동굴', W / 2 * sx, (S.CY + 3) * sy);
+  }
+
   // ───────── 아이콘 ─────────
   const iconCache = {};
-  function iconImg(id) {
+  function iconSrc(id) {
     if (!iconCache[id]) {
       const c = document.createElement('canvas');
       c.width = c.height = 16;
       D.drawItem(c.getContext('2d'), 0, 0, id);
       iconCache[id] = c.toDataURL();
     }
-    return el('img', { class: 'ic', src: iconCache[id], alt: S.ITEMS[id] ? S.ITEMS[id].name : id });
+    return iconCache[id];
   }
+  const iconImg = (id, cls) => el('img', { class: cls || 'ic', src: iconSrc(id), alt: S.ITEMS[id] ? S.ITEMS[id].name : id });
   const itemName = (id) => (S.ITEMS[id] ? S.ITEMS[id].name : id);
 
   // ───────── 캔버스 ─────────
   const canvas = $('game');
   const ctx = canvas.getContext('2d');
+  const dark = document.createElement('canvas'), dctx = dark.getContext('2d');
   let dpr = 1, Sc = ZOOM;
   function resize() {
     dpr = window.devicePixelRatio || 1;
     Sc = ZOOM * dpr;
     canvas.width = Math.floor(innerWidth * dpr);
     canvas.height = Math.floor(innerHeight * dpr);
+    dark.width = canvas.width; dark.height = canvas.height;
+    mmSize();
   }
   addEventListener('resize', resize);
-  resize();
 
   // ───────── 상태 ─────────
   const socket = io();
   let myId = null, joinInfo = null;
-  let my = null;              // 내 코인, 가방, 퀘스트 기록, 아바타
-  let sel = 0;                // 선택한 단축바 칸
-  let fishing = null;         // 내 낚시 상태
+  let my = null;              // 내 코인, 가방, 퀘스트 기록, 아바타, 도감
+  let clockSkew = 0;          // 서버 시간 - 내 시간
+  let sel = 0;
+  let fishing = null;
+  let buffUntil = 0;
   const players = {};
-  const animals = {};         // id -> { kind, x, y, dx, dy, dir, moving, flags(1 선물 준비, 2 배부름, 4 맞음) }
+  const animals = {};         // id -> { kind, x, y, dx, dy, dir, moving, flags, owner, pname, follow }
   const arrows = [], fxs = [];
   const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-  const me = { x: 0, y: 0, dir: 'down', moving: false };
+  const me = { x: 0, y: 0, dir: 'down', moving: false, pose: null };
+  resize();
 
   function syncAnimals(list) {
     const seen = new Set();
-    for (const [id, kind, x, y, left, moving, flags] of list) {
+    for (const [id, kind, x, y, left, moving, flags, owner, pname, follow] of list) {
       seen.add(id);
       const dir = left ? 'left' : 'right';
-      if (!animals[id]) animals[id] = { kind, x, y, dx: x, dy: y, dir, moving: !!moving, flags };
-      else Object.assign(animals[id], { x, y, dir, moving: !!moving, flags });
+      const extra = { owner: owner || null, pname: pname || null, follow: !!follow };
+      if (!animals[id]) animals[id] = Object.assign({ kind, x, y, dx: x, dy: y, dir, moving: !!moving, flags }, extra);
+      else {
+        const a = animals[id];
+        if (Math.hypot(a.dx - x, a.dy - y) > TILE * 6) { a.dx = x; a.dy = y; } // 순간이동
+        Object.assign(a, { x, y, dir, moving: !!moving, flags }, extra);
+      }
     }
     for (const id in animals) if (!seen.has(id)) delete animals[id];
   }
   function animalAt(tx, ty) {
     const cx = tx * TILE + 8, cy = ty * TILE + 8;
-    let best = null, bd = 13;
-    for (const a of Object.values(animals)) {
+    let best = null, bd = 13, bid = null;
+    for (const [id, a] of Object.entries(animals)) {
       const d = Math.hypot(a.dx - cx, a.dy - 4 - cy);
-      if (d < bd) { bd = d; best = a; }
+      if (d < bd) { bd = d; best = a; bid = id; }
     }
+    if (best) best.id = bid;
     return best;
   }
+  const myName = () => (my && players[myId] ? players[myId].name.toLowerCase() : '');
+  const isMyPet = (a) => !!a && !!a.owner && a.owner.toLowerCase() === myName();
 
   // ───────── 탭 제목 / 안 읽은 채팅 알림 ─────────
   const BASE_TITLE = '알PDF';
@@ -159,7 +249,7 @@
 
   function addPlayer(p) {
     players[p.id] = Object.assign(players[p.id] || {}, {
-      name: p.name, x: p.x, y: p.y, dx: p.x, dy: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, fishing: p.fishing,
+      name: p.name, x: p.x, y: p.y, dx: p.x, dy: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, fishing: p.fishing, held: p.held, pose: p.pose,
     });
     updateWho();
   }
@@ -170,8 +260,41 @@
     while (box.children.length >= 4) box.firstChild.remove();
     const t = el('div', { class: 'toast', style: 'display:flex;gap:6px;align-items:center' }, item ? iconImg(item) : null, text);
     box.append(t);
-    setTimeout(() => t.remove(), 2600);
+    setTimeout(() => t.remove(), 2800);
   }
+
+  // 보상 확인 창 (여러 개면 차례대로)
+  const rewardQueue = [];
+  function showReward(r) {
+    rewardQueue.push(r);
+    if (rewardQueue.length === 1) renderReward();
+  }
+  function renderReward() {
+    const r = rewardQueue[0];
+    const box = $('reward');
+    if (!r) { box.classList.add('hidden'); return; }
+    const list = el('div', { class: 'rw-list' });
+    if (r.coins) list.append(el('div', { class: 'rw-item' }, el('span', { class: 'rw-coin' }, '💰'), el('b', {}, `+${r.coins}`), el('small', {}, '코인')));
+    for (const [id, n] of Object.entries(r.items || {})) {
+      const def = S.ITEMS[id];
+      list.append(el('div', { class: 'rw-item' + (def && def.questOnly ? ' rare' : '') }, iconImg(id, 'ic big'), el('b', {}, `×${n}`), el('small', {}, itemName(id))));
+    }
+    if (r.unlock) {
+      const c = S.COSMETICS[r.unlock];
+      const av = Object.assign({}, my ? my.avatar : S.defaultAvatar(Math.random));
+      av[c.slot] = c.slot === 'top' ? S.TOPS.findIndex((t) => t.id === c.id) : c.id;
+      list.append(el('div', { class: 'rw-item rare' }, avatarThumb(av, 56), el('b', {}, '꾸미기'), el('small', {}, c.name)));
+    }
+    if (r.converted) list.append(el('div', { class: 'rw-item' }, el('span', { class: 'rw-coin' }, '💰'), el('b', {}, `+${r.converted}`), el('small', {}, '(이미 가진 꾸미기 → 코인)')));
+    if (!list.children.length) list.append(el('div', {}, '받을 것이 없었어요'));
+    $('rewardBody').innerHTML = '';
+    $('rewardBody').append(...[el('h3', {}, r.title || '🎁 보상'), list,
+      r.unlock ? el('p', { class: 'rw-hint' }, '👗 꾸미기(C)에서 바로 입어볼 수 있어요!') : null,
+      Object.keys(r.items || {}).length ? el('p', { class: 'rw-hint' }, '🎒 가방에 넣었어요') : null].filter(Boolean));
+    box.classList.remove('hidden');
+    $('rewardOk').focus();
+  }
+  $('rewardOk').addEventListener('click', () => { rewardQueue.shift(); renderReward(); });
 
   // ───────── 네트워크 ─────────
   socket.on('connect', () => {
@@ -186,36 +309,49 @@
     myId = d.id;
     world.ground = d.world.ground;
     world.objects = new Map(Object.entries(d.world.objects));
-    signs.clear();
-    for (const [k, o] of world.objects) if (o.t === 'sign') signs.add(k);
+    signs.clear(); anims.clear(); lights.clear();
+    for (const [k, o] of world.objects) indexTile(k, o);
     redrawAll();
     for (const id in players) delete players[id];
     Object.values(d.players).forEach(addPlayer);
     for (const id in animals) delete animals[id];
     syncAnimals(d.animals || []);
-    me.x = players[myId].x; me.y = players[myId].y;
+    me.x = players[myId].x; me.y = players[myId].y; me.pose = null;
     fishing = null;
     if (first) {
       $('log').innerHTML = '';
       d.chatLog.forEach(addLog);
       $('join').classList.add('hidden');
-      ['top', 'who', 'chat', 'hotbarWrap'].forEach((id) => $(id).classList.remove('hidden'));
+      if (document.activeElement) document.activeElement.blur(); // 입장 후 바로 키보드로 조작할 수 있게
+      ['top', 'side', 'chat', 'hotbarWrap'].forEach((id) => $(id).classList.remove('hidden'));
+      mmSize();
       showToast('❓ 조작법 버튼을 눌러 방법을 확인해 보세요!');
+      socket.emit('sel', { slot: sel });
     }
   });
 
   socket.on('me', (d) => {
     my = d;
+    clockSkew = d.now - Date.now();
     $('coins').textContent = `💰 ${d.coins}`;
     if (players[myId]) players[myId].avatar = d.avatar;
     renderHotbar();
-    if (modal === 'bag' || modal === 'shop' || modal === 'quests') renderModal();
+    updateQuestBadge();
+    if (['bag', 'shop', 'quests', 'cook', 'col', 'trade'].includes(modal)) renderModal();
   });
 
   socket.on('tiles', (list) => { if (world.ground) list.forEach(applyTile); });
   socket.on('playerJoined', addPlayer);
   socket.on('playerLeft', (id) => { delete players[id]; updateWho(); });
   socket.on('playerUpdate', ({ id, avatar }) => { if (players[id]) { players[id].avatar = avatar; updateWho(); } });
+  socket.on('held', ({ id, held }) => { if (players[id]) players[id].held = held; });
+  socket.on('pose', ({ id, pose, x, y }) => {
+    const p = players[id];
+    if (!p) return;
+    p.pose = pose;
+    if (pose) { p.x = p.dx = x; p.y = p.dy = y; }
+    if (id === myId) { me.pose = pose; if (pose) { me.x = x; me.y = y; me.dir = 'down'; } }
+  });
   socket.on('playerFx', ({ id, fishing: f }) => {
     if (players[id]) players[id].fishing = f;
     if (id === myId) fishing = f ? { x: f.x, y: f.y, bite: false } : null;
@@ -240,9 +376,34 @@
   });
   socket.on('typing', ({ id, on }) => { if (players[id]) players[id].typing = on; });
   socket.on('toast', (t) => showToast(t));
+  socket.on('reward', showReward);
+  socket.on('colNew', ({ key, name }) => showToast(`📖 도감 등록! ${name}`, key.startsWith('hunt:') ? null : key));
+  socket.on('buff', ({ ms }) => { buffUntil = performance.now() + ms; });
   socket.on('editSign', ({ x, y }) => setTimeout(() => openModal('sign', { x, y }), 120));
   socket.on('fishBite', () => { if (fishing) fishing.bite = true; });
   socket.on('fishResult', (r) => { fishing = null; showToast(r.text, r.item); });
+
+  // 거래
+  let trade = null, tradeAskFrom = null;
+  socket.on('tradeAsk', ({ from, name }) => {
+    tradeAskFrom = from;
+    $('tradeAskText').textContent = `🤝 ${name} 님이 거래를 신청했어요!`;
+    $('tradeAsk').classList.remove('hidden');
+    clearTimeout($('tradeAsk')._t);
+    $('tradeAsk')._t = setTimeout(() => $('tradeAsk').classList.add('hidden'), 30000);
+  });
+  const answerTrade = (ok) => { if (tradeAskFrom) socket.emit('tradeAnswer', { from: tradeAskFrom, ok }); tradeAskFrom = null; $('tradeAsk').classList.add('hidden'); };
+  $('tradeYes').addEventListener('click', () => answerTrade(true));
+  $('tradeNo').addEventListener('click', () => answerTrade(false));
+  socket.on('trade', (t) => {
+    trade = t;
+    if (modal !== 'trade') openModal('trade'); else renderModal();
+  });
+  socket.on('tradeEnd', ({ msg }) => {
+    trade = null;
+    if (modal === 'trade') closeModal();
+    if (msg) showToast(msg);
+  });
 
   // ───────── 입장 ─────────
   const nameInput = $('nameInput');
@@ -292,7 +453,8 @@
     const ul = $('who').querySelector('ul');
     ul.innerHTML = '';
     list.forEach(([id, p]) => {
-      const li = el('li', {}, p.name + (id === myId ? ' (나)' : ''));
+      const li = el('li', {}, el('span', { class: 'dot' }), el('span', { class: 'grow' }, p.name + (id === myId ? ' (나)' : '')),
+        id !== myId ? el('button', { class: 'mini', title: '거래 신청', onclick: () => socket.emit('tradeReq', { to: id }) }, '🤝') : null);
       li.style.setProperty('--c', S.CLOTH[p.avatar ? p.avatar.tc : 0]);
       ul.append(li);
     });
@@ -312,12 +474,13 @@
   function selectSlot(i) {
     sel = (i + 9) % 9;
     renderHotbar();
+    socket.emit('sel', { slot: sel });
     const it = my && my.inv[sel];
     const box = $('itemName');
     box.textContent = it ? `${itemName(it.id)} — ${S.ITEMS[it.id].desc || ''}` : '빈 손 (Space = 상호작용)';
     box.style.opacity = 1;
     clearTimeout(nameTimer);
-    nameTimer = setTimeout(() => { box.style.opacity = 0; }, 2200);
+    nameTimer = setTimeout(() => { box.style.opacity = 0; }, 2400);
   }
 
   // ───────── 행동 ─────────
@@ -329,7 +492,7 @@
     const def = S.ITEMS[it.id];
     if (def.tool === 'rod') {
       if (world.g(target.x, target.y) !== 'water') { showToast('물을 바라보고 던져요 🎣'); return; }
-      socket.emit('fishCast', { x: target.x, y: target.y });
+      socket.emit('fishCast', { x: target.x, y: target.y, slot: sel });
       return;
     }
     if (def.tool === 'bow') {
@@ -341,15 +504,24 @@
       socket.emit('shoot', { ax, ay });
       return;
     }
+    const an = animalAt(target.x, target.y);
+    if (an && isMyPet(an) && !S.FEED.includes(it.id)) { openModal('pet', an.id); return; }
     socket.emit('act', { type: 'use', slot: sel, x: target.x, y: target.y });
   }
   function doInteract() {
-    if (animalAt(target.x, target.y)) { socket.emit('act', { type: 'interact', x: target.x, y: target.y }); return; }
+    const an = animalAt(target.x, target.y);
+    if (an) {
+      if (isMyPet(an)) return openModal('pet', an.id);
+      socket.emit('act', { type: 'interact', x: target.x, y: target.y });
+      return;
+    }
     const o = world.o(target.x, target.y);
     if (!o) return;
+    const od = S.OBJ[o.t] || {};
     if (o.t === 'shop') return openModal('shop');
     if (o.t === 'board') return openModal('quests');
     if (o.t === 'sign') return openModal('sign', { x: target.x, y: target.y });
+    if (od.cook) return openModal('cook');
     socket.emit('act', { type: 'interact', x: target.x, y: target.y });
   }
   function doBreak() {
@@ -359,10 +531,14 @@
 
   // ───────── 키보드 / 마우스 ─────────
   const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
-  const MODAL_KEYS = { KeyI: 'bag', KeyB: 'bag', KeyC: 'avatar', KeyQ: 'quests' };
+  const MODAL_KEYS = { KeyI: 'bag', KeyB: 'bag', KeyC: 'avatar', KeyQ: 'quests', KeyK: 'col' };
   addEventListener('keydown', (e) => {
     if (!myId || document.activeElement === chatInput) return;
     const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
+    if (!$('reward').classList.contains('hidden')) {
+      if (e.key === 'Enter' || e.key === 'Escape' || e.code === 'Space') { e.preventDefault(); rewardQueue.shift(); renderReward(); }
+      return;
+    }
     if (modal) {
       if (e.key === 'Escape') closeModal();
       else if (!typing && MODAL_KEYS[e.code] === modal) closeModal();
@@ -373,6 +549,8 @@
     if (e.key === 'Escape') { if (fishing) socket.emit('fishCancel'); return; }
     if (/^Digit[1-9]$/.test(e.code)) { selectSlot(+e.code.slice(5) - 1); return; }
     if (MODAL_KEYS[e.code]) { openModal(MODAL_KEYS[e.code]); return; }
+    if (e.code === 'KeyM') { $('mmWrap').classList.toggle('hidden'); return; }
+    if (['Space', 'KeyE', 'KeyF', 'KeyX'].includes(e.code)) target = computeTarget();
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) doUse(); return; }
     if (e.code === 'KeyE' || e.code === 'KeyF') { if (!e.repeat) doInteract(); return; }
     if (e.code === 'KeyX') { if (!e.repeat) doBreak(); return; }
@@ -399,7 +577,6 @@
     b.blur();
   }));
 
-  // 목표 칸: 손 닿는 곳에 마우스가 있으면 그 칸, 아니면 바라보는 칸
   function computeTarget() {
     const cx = me.x, cy = me.y - 6;
     if (mouse.in && performance.now() - mouse.t < 4000) {
@@ -408,15 +585,16 @@
       if (Math.hypot(tx * TILE + 8 - cx, ty * TILE + 8 - cy) <= S.REACH) return { x: tx, y: ty };
     }
     const fx = Math.floor(me.x / TILE), fy = Math.floor((me.y - 4) / TILE);
-    const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[me.dir];
+    const d = DIRV[me.dir];
     return { x: fx + d[0], y: fy + d[1] };
   }
 
-  // ───────── 창 (가방 / 상점 / 퀘스트 / 꾸미기 / 표지판 / 조작법) ─────────
+  // ───────── 창 ─────────
   let modal = null, modalArg = null;
-  let bagTab = 'inv', pick = null, shopTab = 'buy', avDraft = null, avTimer = null;
+  let bagTab = 'inv', pick = null, shopTab = 'farm', questTab = 'd', avDraft = null, avTimer = null;
   function openModal(name, arg) {
     if (!my) return;
+    if (modal === 'trade' && name !== 'trade' && trade) return showToast('거래 중이에요! 먼저 거래를 끝내주세요');
     modal = name; modalArg = arg || null;
     keys.clear();
     pick = null; avDraft = null;
@@ -424,22 +602,27 @@
     renderModal();
   }
   function closeModal() {
+    if (modal === 'trade' && trade) socket.emit('tradeCancel');
     modal = null;
     clearInterval(avTimer); avTimer = null; avDraft = null;
     $('modal').classList.add('hidden');
     document.activeElement && document.activeElement.blur();
   }
   $('modalClose').addEventListener('click', closeModal);
-  $('modal').addEventListener('mousedown', (e) => { if (e.target === $('modal')) closeModal(); });
+  $('modal').addEventListener('mousedown', (e) => { if (e.target === $('modal') && modal !== 'trade') closeModal(); });
 
   function renderModal() {
     if (!modal) return;
     const body = $('modalBody');
+    const scroll = body.scrollTop;
     body.innerHTML = '';
-    ({ bag: renderBag, shop: renderShop, quests: renderQuests, avatar: renderAvatar, sign: renderSign, help: renderHelp })[modal](body);
+    ({ bag: renderBag, shop: renderShop, quests: renderQuests, avatar: renderAvatar, sign: renderSign, help: renderHelp,
+      cook: renderCook, col: renderCol, pet: renderPet, trade: renderTrade })[modal](body);
+    body.scrollTop = scroll;
   }
   const tabs = (cur, list, onPick) => el('div', { class: 'tabs' },
     list.map(([id, label]) => el('button', { class: 'btn' + (cur === id ? ' on' : ''), onclick: () => { onPick(id); renderModal(); } }, label)));
+  const qoTag = (id) => (S.ITEMS[id] && S.ITEMS[id].questOnly ? el('span', { class: 'tag' }, '✨퀘스트 전용') : null);
 
   function renderBag(body) {
     $('modalTitle').textContent = '🎒 가방';
@@ -448,7 +631,7 @@
       const grid = el('div', { class: 'grid' });
       my.inv.forEach((it, i) => {
         grid.append(el('div', {
-          class: 'slot' + (i < 9 ? ' hb' : '') + (pick === i ? ' pick' : '') + (i === sel ? ' sel' : ''),
+          class: 'slot' + (i < 9 ? ' hb' : '') + (pick === i ? ' pick' : '') + (i === sel ? ' sel' : '') + (it && S.ITEMS[it.id].questOnly ? ' qo' : ''),
           title: it ? itemName(it.id) : '',
           onclick: () => {
             if (pick === null) { if (it) pick = i; }
@@ -461,7 +644,7 @@
       const it = pick !== null && my.inv[pick];
       body.append(it
         ? el('div', { class: 'info' }, iconImg(it.id),
-          el('div', { class: 'grow' }, el('b', {}, `${itemName(it.id)} ×${it.n}`), el('br'), S.ITEMS[it.id].desc || '', el('br'), el('small', { style: 'opacity:.6' }, '옮길 칸을 누르세요')),
+          el('div', { class: 'grow' }, el('b', {}, `${itemName(it.id)} ×${it.n}`), ' ', qoTag(it.id), el('br'), S.ITEMS[it.id].desc || '', el('br'), el('small', { style: 'opacity:.6' }, '옮길 칸을 누르세요')),
           el('button', { class: 'btn', onclick: () => { if (confirm(`${itemName(it.id)} ×${it.n}, 버릴까요?`)) { socket.emit('trash', { slot: pick }); pick = null; } } }, '🗑️ 버리기'))
         : el('div', { class: 'info' }, '💡 칸을 누르고 다른 칸을 누르면 자리가 바뀌어요. 윗줄 9칸이 단축바(1~9)예요.'));
     } else {
@@ -473,20 +656,22 @@
           el('div', { class: 'grow' }, `${itemName(r.out)} ×${r.n}`, el('small', {}, need)),
           el('button', { class: 'btn pink', disabled: !ok, onclick: () => socket.emit('craft', { i }) }, '만들기')));
       });
-      body.append(el('p', { style: 'margin:0 0 8px;font-size:12px;opacity:.7' }, '🌳 나무는 나무 앞에서 X, ⛏ 돌은 채석장 바위 앞에서 X로 모아요.'), rows);
+      body.append(el('p', { class: 'note' }, '🌲 나무는 숲에서, ⛏ 돌·철광석은 동굴에서 X로 모아요.'), rows);
     }
   }
 
   function renderShop(body) {
     $('modalTitle').textContent = '🐱 모모네 상점';
-    body.append(el('p', { style: 'margin:0 0 10px;font-size:13px' }, `어서오라냥! 지금 가진 돈: 💰 ${my.coins}`));
-    body.append(tabs(shopTab, [['buy', '🛒 사기'], ['sell', '💰 팔기'], ['acc', '🎀 꾸미기 아이템']], (t) => { shopTab = t; }));
+    body.append(el('p', { class: 'note' }, `어서오라냥! 지금 가진 돈: 💰 ${my.coins}  ·  ✨퀘스트 전용 아이템은 여기서 못 사요`));
+    body.append(tabs(shopTab, S.SHOP_TABS.map(([id, label]) => [id, label]).concat([['acc', '🎀 꾸미기'], ['sell', '💰 팔기']]), (t) => { shopTab = t; }));
     const rows = el('div', { class: 'rows' });
-    if (shopTab === 'buy') {
-      S.SHOP.forEach(([id, price]) => {
+    const tab = S.SHOP_TABS.find((t) => t[0] === shopTab);
+    if (tab) {
+      tab[2].forEach(([id, price]) => {
+        const stack1 = S.ITEMS[id].stack === 1;
         rows.append(el('div', { class: 'row' }, iconImg(id),
           el('div', { class: 'grow' }, `${itemName(id)} · 💰${price}`, el('small', {}, S.ITEMS[id].desc || '')),
-          [1, 5].map((n) => el('button', { class: 'btn', disabled: my.coins < price * n, onclick: () => socket.emit('buy', { id, n }) }, `×${n}`))));
+          (stack1 ? [1] : [1, 5]).map((n) => el('button', { class: 'btn', disabled: my.coins < price * n, onclick: () => socket.emit('buy', { id, n }) }, `×${n}`))));
       });
     } else if (shopTab === 'sell') {
       const ids = [...new Set(my.inv.filter((it) => it && S.ITEMS[it.id].sell).map((it) => it.id))];
@@ -499,49 +684,192 @@
           el('button', { class: 'btn pink', onclick: () => socket.emit('sell', { id, all: true }) }, `전부 +${price * n}`)));
       });
     } else {
-      S.ACCESSORIES.filter((a) => a.id !== 'none').forEach((a) => {
-        const owned = my.unlocked.includes(a.id);
-        const how = owned ? '보유 중 ✓' : a.price ? `💰${a.price}` : `퀘스트 보상: ${(S.QUESTS.find((q) => q.id === a.quest) || {}).name}`;
-        rows.append(el('div', { class: 'row' }, avatarThumb(Object.assign({}, my.avatar, { acc: a.id })),
-          el('div', { class: 'grow' }, a.name, el('small', {}, how)),
-          a.price && !owned ? el('button', { class: 'btn pink', disabled: my.coins < a.price, onclick: () => socket.emit('buyAcc', { id: a.id }) }, '사기') : null));
+      const slotName = { acc: '머리', top: '옷', back: '등' };
+      Object.values(S.COSMETICS).filter((c) => S.isLocked(c)).sort((a, b) => (a.quest ? 1 : 0) - (b.quest ? 1 : 0)).forEach((c) => {
+        const owned = my.unlocked.includes(c.id);
+        const av = Object.assign({}, my.avatar);
+        av[c.slot] = c.slot === 'top' ? S.TOPS.findIndex((t) => t.id === c.id) : c.id;
+        const how = owned ? '보유 중 ✓' : c.price ? `💰${c.price}` : `✨ ${S.COSMETIC_SRC[c.id] || '퀘스트 보상'} (돈으로 못 사요)`;
+        rows.append(el('div', { class: 'row' + (c.quest ? ' qrow' : '') }, avatarThumb(av),
+          el('div', { class: 'grow' }, `${c.name} `, el('span', { class: 'tag soft' }, slotName[c.slot]), el('small', {}, how)),
+          c.price && !owned ? el('button', { class: 'btn pink', disabled: my.coins < c.price, onclick: () => socket.emit('buyAcc', { id: c.id }) }, '사기') : null));
       });
     }
     body.append(rows);
   }
 
-  function avatarThumb(av) {
-    const c = el('canvas', { width: 20, height: 18, style: 'width:40px;height:36px;image-rendering:pixelated;background:#8fd16f;border:2px solid #4a3b5c' });
-    D.drawChar(c.getContext('2d'), 10, 27, av, 'down', -1);
+  function avatarThumb(av, size) {
+    const s = size || 40;
+    const c = el('canvas', { width: 26, height: 26, style: `width:${s}px;height:${s}px;image-rendering:pixelated;background:#8fd16f;border:2px solid #4a3b5c;flex:none` });
+    D.drawChar(c.getContext('2d'), 13, 25, av, 'down', -1);
     return c;
   }
 
   function rewardText(rw) {
     const out = [];
     if (rw.coins) out.push(`💰${rw.coins}`);
-    if (rw.items) for (const [id, n] of Object.entries(rw.items)) out.push(`${itemName(id)} ×${n}`);
-    if (rw.unlock) out.push(`${S.ACCESSORIES.find((a) => a.id === rw.unlock).name} (꾸미기)`);
+    if (rw.items) for (const [id, n] of Object.entries(rw.items)) out.push(`${itemName(id)} ×${n}${S.ITEMS[id] && S.ITEMS[id].questOnly ? '✨' : ''}`);
+    if (rw.unlock) out.push(`${S.COSMETICS[rw.unlock].name}✨ (꾸미기)`);
     return '🎁 ' + out.join(', ');
+  }
+  function timeLeft(t) {
+    const ms = Math.max(0, my.ends[t] - (Date.now() + clockSkew));
+    const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
+    return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${m}분`;
+  }
+  const pqReady = (q) => !q.done && (my.stats[q.stat] || 0) - q.base >= q.goal;
+  function questReadyCount() {
+    if (!my) return 0;
+    let n = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
+    for (const t of ['d', 'w', 'm']) if (my.pq[t]) n += my.pq[t].list.filter(pqReady).length;
+    n += S.COLLECTIONS.filter((c) => !my.colClaimed.includes(c.id) && c.entries.every((e) => my.col[e])).length;
+    return n;
+  }
+  function updateQuestBadge() {
+    const n = questReadyCount();
+    $('qBadge').textContent = n || '';
+    $('qBadge').style.display = n ? 'inline-block' : 'none';
   }
   function renderQuests(body) {
     $('modalTitle').textContent = '📜 퀘스트';
+    const cnt = (t) => (my.pq[t] ? my.pq[t].list.filter(pqReady).length : 0);
+    const badge = (n) => (n ? ` 🔴${n}` : '');
+    const aCnt = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
+    body.append(tabs(questTab, [['d', '📅 일간' + badge(cnt('d'))], ['w', '🗓️ 주간' + badge(cnt('w'))], ['m', '🌙 월간' + badge(cnt('m'))], ['a', '🏆 업적' + badge(aCnt)]], (t) => { questTab = t; }));
     const rows = el('div', { class: 'rows' });
-    const state = (q) => (my.claimed.includes(q.id) ? 2 : (my.stats[q.stat] || 0) >= q.goal ? 0 : 1);
-    [...S.QUESTS].sort((a, b) => state(a) - state(b)).forEach((q) => {
-      const v = Math.min(q.goal, my.stats[q.stat] || 0), st = state(q);
-      rows.append(el('div', { class: 'row q' + (st === 2 ? ' done' : '') },
-        el('div', { class: 'grow' }, el('b', {}, q.name), ` — ${q.desc}`,
-          el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
-          el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
-        st === 0 ? el('button', { class: 'btn pink', onclick: () => socket.emit('claim', { id: q.id }) }, '보상 받기')
-          : st === 2 ? el('span', {}, '✅') : null));
+    if (questTab !== 'a') {
+      const t = questTab;
+      const resetTxt = { d: '매일 밤 12시', w: '일요일 밤 12시', m: '다음 달 1일 0시' }[t];
+      body.append(el('div', { class: 'qhead' },
+        t === 'd' ? el('b', {}, `⭐ 일간 레벨 Lv.${my.dlv + 1}`) : null,
+        el('span', {}, `⏰ 초기화까지 ${timeLeft(t)} (${resetTxt}, 한국 시간)`),
+        el('small', {}, t === 'd' ? '깨면 레벨이 올라 더 어려운 퀘스트가 바로 나와요! 못 깬 건 자정에 사라져요.' : t === 'w' ? '보상: 코인 + ✨퀘스트 전용 가구' : '보상: 코인 + ✨퀘스트 전용 꾸미기·가구')));
+      (my.pq[t] ? my.pq[t].list : []).forEach((q) => {
+        const v = Math.min(q.goal, Math.max(0, (my.stats[q.stat] || 0) - q.base)), ready = pqReady(q);
+        rows.append(el('div', { class: 'row q' + (q.done ? ' done' : '') + (ready ? ' ready' : '') },
+          el('div', { class: 'grow' }, el('b', {}, t === 'd' ? `Lv.${q.lv + 1} ` : ''), q.desc,
+            el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
+            el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
+          ready ? el('button', { class: 'btn pink', onclick: () => socket.emit('claimP', { type: t, id: q.id }) }, '보상 받기')
+            : q.done ? el('span', {}, '✅') : null));
+      });
+    } else {
+      const state = (q) => (my.claimed.includes(q.id) ? 2 : (my.stats[q.stat] || 0) >= q.goal ? 0 : 1);
+      [...S.QUESTS].sort((a, b) => state(a) - state(b)).forEach((q) => {
+        const v = Math.min(q.goal, my.stats[q.stat] || 0), st = state(q);
+        rows.append(el('div', { class: 'row q' + (st === 2 ? ' done' : '') + (st === 0 ? ' ready' : '') },
+          el('div', { class: 'grow' }, el('b', {}, q.name), ` — ${q.desc}`,
+            el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
+            el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
+          st === 0 ? el('button', { class: 'btn pink', onclick: () => socket.emit('claim', { id: q.id }) }, '보상 받기')
+            : st === 2 ? el('span', {}, '✅') : null));
+      });
+    }
+    body.append(rows);
+  }
+
+  function renderCol(body) {
+    $('modalTitle').textContent = '📖 도감';
+    const total = S.COLLECTIONS.reduce((s, c) => s + c.entries.length, 0);
+    body.append(el('p', { class: 'note' }, `처음 얻은 것은 도감에 등록돼요. 한 도감을 다 채우면 ✨특별 보상! (전체 ${Object.keys(my.col).filter((k) => S.COL_INDEX[k]).length} / ${total})`));
+    const rows = el('div', { class: 'rows' });
+    S.COLLECTIONS.forEach((c) => {
+      const got = c.entries.filter((e) => my.col[e]).length, done = got === c.entries.length, claimed = my.colClaimed.includes(c.id);
+      const cells = el('div', { class: 'colgrid' }, c.entries.map((e) => {
+        const has = !!my.col[e];
+        const icon = e.startsWith('hunt:') ? huntIcon(e.slice(5)) : iconImg(e);
+        if (!has) icon.classList.add('unknown');
+        return el('div', { class: 'colcell' + (has ? '' : ' no'), title: has ? `${S.colName(e)} (${my.col[e]}번)` : '???' }, icon, el('small', {}, has ? S.colName(e) : '???'));
+      }));
+      rows.append(el('div', { class: 'row col' + (claimed ? ' done' : '') },
+        el('div', { class: 'grow' }, el('b', {}, `${c.name}  ${got} / ${c.entries.length}`), cells, el('small', {}, rewardText(c.reward))),
+        done && !claimed ? el('button', { class: 'btn pink', onclick: () => socket.emit('claimCol', { id: c.id }) }, '보상 받기') : claimed ? el('span', {}, '✅') : null));
+    });
+    body.append(rows);
+  }
+  function huntIcon(kind) {
+    const c = el('canvas', { width: 24, height: 24, class: 'ic' });
+    D.drawAnimal(c.getContext('2d'), 12, 22, kind, 'right', -1, 0);
+    return c;
+  }
+
+  function renderCook(body) {
+    $('modalTitle').textContent = '🍳 요리하기';
+    body.append(el('p', { class: 'note' }, '요리를 들고 Space로 먹으면 30초 동안 빨라져요 💨  상점에 팔면 재료보다 비싸요!'));
+    const rows = el('div', { class: 'rows' });
+    S.COOK.forEach((r, i) => {
+      const ok = Object.entries(r.need).every(([id, n]) => S.countItem(my.inv, id) >= n);
+      const need = Object.entries(r.need).map(([id, n]) => `${itemName(id)} ${n} (${S.countItem(my.inv, id)})`).join(' + ');
+      rows.append(el('div', { class: 'row' + (ok ? '' : ' dim') }, iconImg(r.out),
+        el('div', { class: 'grow' }, `${itemName(r.out)} · 팔면 💰${S.ITEMS[r.out].sell}`, my.col[r.out] ? null : el('span', { class: 'tag' }, 'NEW'), el('small', {}, need)),
+        el('button', { class: 'btn pink', disabled: !ok, onclick: () => socket.emit('cook', { i }) }, '요리'),
+        el('button', { class: 'btn', disabled: !ok, onclick: () => socket.emit('cook', { i, n: 5 }) }, '×5')));
     });
     body.append(rows);
   }
 
+  function renderPet(body) {
+    const a = animals[modalArg];
+    if (!a) { closeModal(); return; }
+    $('modalTitle').textContent = `🐶 ${a.pname}`;
+    const nameIn = el('input', { class: 'txt', maxlength: 10, value: a.pname });
+    const cmd = (c, extra) => { socket.emit('petCmd', Object.assign({ id: modalArg, cmd: c }, extra)); closeModal(); };
+    body.append(el('div', { class: 'petbox' },
+      el('div', { class: 'petpic' }, huntIcon(a.kind)),
+      el('div', { class: 'grow' },
+        el('p', { style: 'margin:0 0 8px' }, a.follow ? '🐾 지금 나를 따라다니고 있어요' : '🏠 지금 이 근처에서 지내고 있어요 (집)'),
+        el('div', { class: 'pick-row' },
+          el('button', { class: 'btn pink', onclick: () => cmd('follow') }, '🐾 따라와!'),
+          el('button', { class: 'btn', onclick: () => cmd('stay') }, '🏠 여기서 지내'),
+          el('button', { class: 'btn', onclick: () => cmd('pat') }, '💕 쓰다듬기')),
+        el('div', { class: 'pick-row', style: 'margin-top:10px' }, nameIn,
+          el('button', { class: 'btn', onclick: () => cmd('name', { name: nameIn.value }) }, '✏️ 이름 바꾸기')),
+        el('div', { class: 'pick-row', style: 'margin-top:10px' },
+          el('button', { class: 'btn', onclick: () => cmd('bag') }, '🎒 가방에 넣기')),
+        el('small', { style: 'opacity:.6;display:block;margin-top:8px' }, '집에 두고 싶으면 집 안에서 "여기서 지내"를 눌러요. 내가 나가면 강아지도 집으로 돌아가요.'))));
+  }
+
+  function renderTrade(body) {
+    if (!trade) { closeModal(); return; }
+    $('modalTitle').textContent = `🤝 ${trade.other} 님과 거래`;
+    const mine = trade.mine, theirs = trade.theirs;
+    const set = (items, coins) => socket.emit('tradeSet', { items, coins });
+    const list = (o, editable) => {
+      const box = el('div', { class: 'tlist' });
+      const ent = Object.entries(o.items);
+      if (!ent.length && !o.coins) box.append(el('small', { style: 'opacity:.6' }, '아직 없어요'));
+      if (o.coins) box.append(el('div', { class: 'trow' }, el('span', { class: 'rw-coin' }, '💰'), el('span', { class: 'grow' }, `${o.coins} 코인`)));
+      ent.forEach(([id, n]) => box.append(el('div', { class: 'trow' }, iconImg(id), el('span', { class: 'grow' }, `${itemName(id)} ×${n}`),
+        editable ? el('button', { class: 'mini', onclick: () => { const it = Object.assign({}, o.items); if (--it[id] <= 0) delete it[id]; set(it, o.coins); } }, '−') : null)));
+      return box;
+    };
+    const coinIn = el('input', { class: 'txt', type: 'number', min: 0, max: my.coins, value: mine.coins, style: 'width:90px' });
+    const invIds = [...new Set(my.inv.filter((it) => it).map((it) => it.id))];
+    const inv = el('div', { class: 'tinv' }, invIds.map((id) => {
+      const have = S.countItem(my.inv, id), off = mine.items[id] || 0, okT = S.canTrade(id);
+      return el('button', {
+        class: 'tcell' + (okT ? '' : ' no'), disabled: !okT || off >= have, title: okT ? `${itemName(id)} (보유 ${have})` : '✨퀘스트 전용 아이템은 거래할 수 없어요',
+        onclick: () => set(Object.assign({}, mine.items, { [id]: off + 1 }), mine.coins),
+        oncontextmenu: (e) => { e.preventDefault(); set(Object.assign({}, mine.items, { [id]: have }), mine.coins); },
+      }, iconImg(id), el('span', { class: 'n' }, have - off));
+    }));
+    body.append(
+      el('div', { class: 'tcols' },
+        el('div', { class: 'tcol' + (trade.myReady ? ' ok' : '') }, el('b', {}, `내가 줄 것 ${trade.myReady ? '✅' : ''}`), list(mine, true)),
+        el('div', { class: 'tcol' + (trade.theirReady ? ' ok' : '') }, el('b', {}, `${trade.other} 님이 줄 것 ${trade.theirReady ? '✅' : ''}`), list(theirs, false))),
+      el('p', { class: 'note' }, '아래 내 물건을 누르면 1개씩 올라가요 (오른쪽 클릭 = 전부). 무엇이든 바뀌면 확인이 풀려요.'),
+      inv,
+      el('div', { class: 'pick-row', style: 'margin-top:10px;justify-content:space-between' },
+        el('span', { class: 'pick-row' }, '💰 코인 ', coinIn, el('button', { class: 'btn', onclick: () => set(mine.items, Math.max(0, Math.min(my.coins, coinIn.value | 0))) }, '올리기')),
+        el('span', { class: 'pick-row' },
+          el('button', { class: 'btn', onclick: () => { socket.emit('tradeCancel'); } }, '❌ 취소'),
+          el('button', { class: 'btn pink', onclick: () => socket.emit('tradeReady', { on: !trade.myReady }) }, trade.myReady ? '확인 풀기' : '✅ 확인 (거래하기)'))),
+      el('small', { style: 'opacity:.6;display:block;margin-top:6px' }, '둘 다 ✅ 확인을 누르면 바로 바꿔요.'));
+  }
+
   function renderAvatar(body) {
     $('modalTitle').textContent = '👗 꾸미기';
-    if (!avDraft) avDraft = Object.assign({}, my.avatar);
+    if (!avDraft) avDraft = Object.assign({ back: 'none' }, my.avatar);
     const prev = el('canvas', { width: 40, height: 50, id: 'avPrev' });
     const dirs = ['down', 'left', 'up', 'right'];
     let di = 0;
@@ -559,18 +887,20 @@
       el('button', { class: 'sw' + (avDraft[k] === i ? ' on' : ''), style: `background:${c}`, onclick: () => setv(k, i) })));
     const chips = (k, list) => el('div', { class: 'pick-row' }, list.map((o, i) =>
       el('button', { class: 'chip' + (avDraft[k] === i ? ' on' : ''), onclick: () => setv(k, i) }, o.name)));
-    const opt = (label, ctl) => el('div', { class: 'opt' }, el('span', {}, label), ctl);
-    const accRow = el('div', { class: 'pick-row' }, S.ACCESSORIES.map((a) => {
-      const owned = my.unlocked.includes(a.id) || a.id === 'none';
+    const lockChips = (k, list, byIndex) => el('div', { class: 'pick-row' }, list.map((a, i) => {
+      const owned = !S.isLocked(a) || my.unlocked.includes(a.id);
+      const v = byIndex ? i : a.id;
       return el('button', {
-        class: 'chip' + (avDraft.acc === a.id ? ' on' : ''), disabled: !owned,
-        title: owned ? '' : a.price ? `상점에서 💰${a.price}` : '퀘스트 보상', onclick: () => setv('acc', a.id),
+        class: 'chip' + (avDraft[k] === v ? ' on' : '') + (a.quest ? ' q' : ''), disabled: !owned,
+        title: owned ? '' : a.price ? `상점에서 💰${a.price}` : (S.COSMETIC_SRC[a.id] || '퀘스트 보상'), onclick: () => setv(k, v),
       }, (owned ? '' : '🔒') + a.name);
     }));
+    const opt = (label, ctl) => el('div', { class: 'opt' }, el('span', {}, label), ctl);
     body.append(el('div', { class: 'av' },
       el('div', { style: 'display:grid;gap:8px;justify-items:center' }, prev,
         el('button', { class: 'btn pink', style: 'width:160px', onclick: () => { socket.emit('avatar', avDraft); closeModal(); } }, '💾 저장하기'),
-        el('button', { class: 'btn', style: 'width:160px', onclick: () => { avDraft = Object.assign({}, my.avatar); renderModal(); } }, '↩ 되돌리기')),
+        el('button', { class: 'btn', style: 'width:160px', onclick: () => { avDraft = Object.assign({ back: 'none' }, my.avatar); renderModal(); } }, '↩ 되돌리기'),
+        el('small', { style: 'opacity:.6;text-align:center' }, '🔒 = 상점(🎀 꾸미기)에서 사거나\n퀘스트·도감 보상으로 얻어요')),
       el('div', {},
         opt('피부', sw('skin', S.SKINS)),
         opt('머리 모양', chips('hs', S.HAIR_STYLES)),
@@ -578,10 +908,11 @@
         opt('눈', chips('eyes', S.EYES)),
         opt('볼터치', el('div', { class: 'pick-row' }, [['켜기', 1], ['끄기', 0]].map(([n, v]) =>
           el('button', { class: 'chip' + (avDraft.blush === v ? ' on' : ''), onclick: () => setv('blush', v) }, n)))),
-        opt('옷', chips('top', S.TOPS)),
+        opt('옷', lockChips('top', S.TOPS, true)),
         opt('옷 색', sw('tc', S.CLOTH)),
         opt('바지 색', sw('bc', S.CLOTH)),
-        opt('액세서리', accRow))));
+        opt('머리 장식', lockChips('acc', S.ACCESSORIES, false)),
+        opt('등', lockChips('back', S.BACKS, false)))));
     paint();
   }
 
@@ -604,22 +935,24 @@
     const k = (key, desc) => [el('kbd', {}, key), el('span', {}, desc)];
     body.append(el('div', { class: 'keys' },
       k('WASD / 방향키', '이동'),
-      k('1 ~ 9 / 마우스 휠', '단축바 아이템 고르기'),
-      k('Space / 왼쪽 클릭', '고른 아이템 쓰기 — 블록 놓기, 밭 갈기, 씨앗 심기, 물 주기, 낚시'),
-      k('E / 빈 손 Space', '상호작용 — 상점, 퀘스트 게시판, 표지판 쓰기, 문 열기, 수확'),
-      k('X / 오른쪽 클릭', '부수기·줍기 — 나무 베기, 바위 깨기, 놓은 블록 회수'),
+      k('1 ~ 9 / 마우스 휠', '단축바 아이템 고르기 (고른 아이템을 손에 들어요)'),
+      k('Space / 왼쪽 클릭', '고른 아이템 쓰기 — 블록 놓기, 밭 갈기, 씨앗, 물 주기, 낚시, 음식 먹기'),
+      k('E / 빈 손 Space', '상호작용 — 상점, 게시판, 문, 수확, 앉기·눕기, TV 켜기, 요리, 버섯 따기'),
+      k('X / 오른쪽 클릭', '부수기·줍기 — 나무 베기, 바위·광석 캐기, 놓은 블록 회수'),
       k('I', '가방 (자리 바꾸기, 🔨 만들기)'),
-      k('C', '꾸미기 (머리, 얼굴, 옷)'),
-      k('Q', '퀘스트'),
+      k('C', '꾸미기 (머리, 얼굴, 옷, 머리 장식, 등)'),
+      k('Q', '퀘스트 (일간·주간·월간·업적)'),
+      k('K', '도감'),
+      k('M', '미니맵 켜기/끄기 (미니맵을 누르면 크게)'),
       k('Enter', '채팅'),
       k('Esc', '창 닫기 / 낚시 그만')),
-      el('p', { style: 'font-size:12px;line-height:1.7;margin:14px 0 0' },
-        '🎯 하얀 네모가 지금 손이 닿는 칸이에요. 마우스를 캐릭터 근처에 올리면 그 칸을 고를 수 있어요.', el('br'),
-        '🌱 농사: 괭이로 밭 갈기 → 씨앗 심기 → 물 주기 (단계마다 다시 물 주기) → 다 자라면 E로 수확', el('br'),
-        '🎣 낚시: 낚싯대를 들고 물을 보고 Space → 찌 위에 ❗가 뜨면 바로 Space!', el('br'),
-        '🏠 건축: 나무를 베어 🔨 만들기에서 벽·바닥·문을 만들고, 표지판으로 내 땅을 표시해요.', el('br'),
-        '🐔 동물: 상점에서 닭·양·소를 사서 Space로 풀어주고, 작물을 들고 Space로 밥 → 머리 위에 선물이 뜨면 E', el('br'),
-        '🏹 사냥: 상점에서 활을 사서 Space로 쏴요 (마우스 쪽으로 조준). 토끼·멧돼지 → 고기·가죽'));
+      el('p', { style: 'font-size:12px;line-height:1.8;margin:14px 0 0' },
+        '🗺️ 마을 오른쪽 길 → 🌲 숲 (나무·버섯·산딸기·사슴·송어), 마을 아래 → 🏡 집 짓는 들판 (넓은 빈 땅), 들판 아래 → ⛏ 동굴 (돌·철·금·수정·동굴어)', el('br'),
+        '🍳 요리: 가스레인지·전자레인지·모닥불·벽난로 앞에서 E. 숲 캠프에 모닥불이 있어요', el('br'),
+        '📖 도감: 처음 얻은 물고기·작물·요리·광석 등이 등록돼요. 다 모으면 특별 보상', el('br'),
+        '🐶 강아지: 상점에서 사서 Space로 꺼내요. E로 따라오기/집에 두기', el('br'),
+        '🤝 거래: 오른쪽 접속자 목록의 🤝 버튼으로 신청해요 (✨퀘스트 전용 아이템은 거래 불가)', el('br'),
+        '🛋️ 의자·소파·변기는 E로 앉고, 침대·욕조는 E로 누워요. 움직이면 일어나요'));
   }
 
   // ───────── 업데이트 ─────────
@@ -627,7 +960,7 @@
   function update(dt, now) {
     if (myId && players[myId]) {
       let vx = 0, vy = 0;
-      if (!modal) {
+      if (!modal && $('reward').classList.contains('hidden')) {
         if (keys.has('left')) vx -= 1;
         if (keys.has('right')) vx += 1;
         if (keys.has('up')) vy -= 1;
@@ -635,17 +968,19 @@
       }
       me.moving = vx !== 0 || vy !== 0;
       if (me.moving) {
+        me.pose = null;
         if (fishing) { socket.emit('fishCancel'); fishing = null; }
         if (vx && vy) { vx *= Math.SQRT1_2; vy *= Math.SQRT1_2; }
         if (vy < 0) me.dir = 'up'; else if (vy > 0) me.dir = 'down';
         if (vx < 0) me.dir = 'left'; else if (vx > 0) me.dir = 'right';
-        const stuck = blocked(me.x, me.y); // 블록에 갇혔으면 빠져나올 수 있게
-        const nx = me.x + vx * SPEED * dt, ny = me.y + vy * SPEED * dt;
+        const sp = SPEED * (now < buffUntil ? 1.4 : 1);
+        const stuck = blocked(me.x, me.y);
+        const nx = me.x + vx * sp * dt, ny = me.y + vy * sp * dt;
         if (stuck || !blocked(nx, me.y)) me.x = Math.min(W * TILE - 1, Math.max(1, nx));
         if (stuck || !blocked(me.x, ny)) me.y = Math.min(H * TILE - 1, Math.max(4, ny));
       }
       const p = players[myId];
-      p.x = p.dx = me.x; p.y = p.dy = me.y; p.dir = me.dir; p.moving = me.moving;
+      p.x = p.dx = me.x; p.y = p.dy = me.y; p.dir = me.dir; p.moving = me.moving; p.pose = me.pose;
       const key = `${me.x.toFixed(1)},${me.y.toFixed(1)},${me.dir},${me.moving}`;
       if (key !== lastKey && now - lastSent > 50) {
         lastKey = key; lastSent = now;
@@ -704,8 +1039,14 @@
     lines.forEach((l, i) => ctx.fillText(l, sx, by + pad + lh / 2 - 2 * u + i * lh));
   }
 
+  // 그리는 위치 (앉기·눕기면 가구 위)
+  function charPos(p) {
+    if (p.pose) return [p.pose.x * TILE + 8, p.pose.y * TILE + (p.pose.k === 'lie' ? 21 : 13)];
+    return [Math.round(p.dx), Math.round(p.dy)];
+  }
   function drawLabels(p, id, now) {
-    const [sx, sy] = toScreen(p.dx, p.dy);
+    const [px, py] = charPos(p);
+    const [sx, sy] = toScreen(px, py - (p.pose && p.pose.k === 'lie' ? 9 : 0));
     const headTop = sy - 25 * Sc;
     const u = dpr;
     ctx.font = `${12 * u}px ${FONT}`;
@@ -719,6 +1060,7 @@
     let text = null;
     if (p.bubble && p.bubble.until > now) text = p.bubble.text;
     else if (p.typing) text = '.'.repeat(1 + Math.floor(now / 350) % 3);
+    else if (p.pose && p.pose.k === 'lie') text = 'z'.repeat(1 + Math.floor(now / 500) % 3) + '💤';
     if (!text) return;
     const life = p.bubble && p.bubble.until > now ? p.bubble.until - now : BUBBLE_MS;
     ctx.globalAlpha = Math.min(1, life / 400);
@@ -730,6 +1072,7 @@
     const an = animalAt(x, y);
     if (an) {
       const def = S.ANIMALS[an.kind];
+      if (def.pet) return isMyPet(an) ? `E ${an.pname} 🐶 (${an.follow ? '따라오는 중' : '집'})` : `E 쓰담 💕 (${an.owner} 님의 ${an.pname})`;
       if (def.wild) return `야생 ${def.name} · 활 Space / X 사냥`;
       if (an.flags & 1) return `E ${S.ITEMS[def.produce].name} 받기 🎁`;
       const it = my.inv[sel];
@@ -738,13 +1081,65 @@
     }
     const o = world.o(x, y);
     if (!o) return null;
+    const od = S.OBJ[o.t] || {};
     if (o.t === 'shop') return 'E 상점';
     if (o.t === 'board') return 'E 퀘스트';
     if (o.t === 'sign') return 'E 글쓰기';
-    if (o.t === 'door') return o.open ? 'E 닫기' : 'E 열기';
+    if (od.door) return o.open ? 'E 닫기' : 'E 열기';
     if (o.t === 'crop' && o.stage >= 3) return 'E 수확';
     if (o.t === 'crop' && !o.water) return '💧 물 필요';
+    if (od.cook) return 'E 요리 🍳';
+    if (od.pick) return 'E 따기';
+    if (o.at && o.back) return '🌱 다시 자라는 중';
+    if (od.lie) return 'E 눕기';
+    if (od.sit) return 'E 앉기';
+    if (od.toggle) return o.on ? 'E 끄기' : 'E 켜기';
+    if (o.t === 'ore_iron' || o.t === 'ore_gold' || o.t === 'crystal') return 'X 캐기 ⛏';
+    if (od.fx || od.msg) return 'E';
     return null;
+  }
+
+  const LIE_COVER = { bed: '#9b8cff', royal_bed: '#ff8fab', bathtub: '#8fd3ff' };
+  function drawPlayer(p, now) {
+    const [x, y] = charPos(p);
+    if (p.pose && p.pose.k === 'lie') {
+      D.drawChar(ctx, x, y, p.avatar || {}, 'down', -1, { sleep: true });
+      const o = world.o(p.pose.x, p.pose.y);
+      const c = LIE_COVER[o && o.t] || '#9b8cff';
+      const tx = p.pose.x * TILE, ty = p.pose.y * TILE;
+      ctx.fillStyle = c; ctx.fillRect(tx + 1, ty + 7, 14, 9);
+      ctx.fillStyle = D.shade(c, 0.25); ctx.fillRect(tx + 1, ty + 7, 14, 1);
+      return;
+    }
+    const step = p.moving ? Math.floor(now / 140) % 2 : -1;
+    D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? 'down' : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose });
+  }
+
+  function drawDarkness(now) {
+    const inCave = me.y >= S.CY * TILE + 8;
+    const t = Math.max(0, Math.min(1, (me.y - (S.CY - 1) * TILE) / (TILE * 4)));
+    if (!inCave && t <= 0) return;
+    dctx.globalCompositeOperation = 'source-over';
+    dctx.clearRect(0, 0, dark.width, dark.height);
+    dctx.fillStyle = `rgba(12,8,24,${0.86 * t})`;
+    dctx.fillRect(0, 0, dark.width, dark.height);
+    dctx.globalCompositeOperation = 'destination-out';
+    const hole = (wx, wy, r) => {
+      const [sx, sy] = toScreen(wx, wy), rr = r * Sc;
+      if (sx < -rr || sy < -rr || sx > dark.width + rr || sy > dark.height + rr) return;
+      const gr = dctx.createRadialGradient(sx, sy, rr * 0.25, sx, sy, rr);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      dctx.fillStyle = gr; dctx.beginPath(); dctx.arc(sx, sy, rr, 0, Math.PI * 2); dctx.fill();
+    };
+    hole(me.x, me.y - 8, 64 + Math.sin(now / 300) * 2);
+    for (const [id, p] of Object.entries(players)) if (id !== myId) hole(p.dx, p.dy - 8, 40);
+    for (const k of lights) {
+      const o = world.objects.get(k), r = D.lightOf(o);
+      if (!r) continue;
+      const [x, y] = k.split(',').map(Number);
+      hole(x * TILE + 8, y * TILE + 6, r * TILE * (0.95 + Math.sin(now / 200 + x) * 0.05));
+    }
+    ctx.drawImage(dark, 0, 0);
   }
 
   function render(now) {
@@ -764,7 +1159,14 @@
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(mapCanvas, 0, 0);
 
-    // 목표 칸 + 놓을 블록 미리보기
+    // 움직이는 가구·불
+    const x0 = Math.floor(cam.x / TILE) - 1, y0 = Math.floor(cam.y / TILE) - 1, x1 = x0 + vw / TILE + 3, y1 = y0 + vh / TILE + 3;
+    for (const k of anims) {
+      const [x, y] = k.split(',').map(Number);
+      if (x < x0 || y < y0 || x > x1 || y > y1) continue;
+      D.drawAnim(ctx, world.objects.get(k), x * TILE, y * TILE, now);
+    }
+
     if (my && !modal) {
       const it = my.inv[sel];
       const def = it && S.ITEMS[it.id];
@@ -780,17 +1182,15 @@
 
     // 캐릭터 + 동물 (아래쪽에 있는 것을 나중에 그려요)
     const order = Object.entries(players).sort((a, b) => a[1].dy - b[1].dy);
-    const drawables = order.map(([, p]) => ({ y: p.dy, p })).concat(Object.values(animals).map((an) => ({ y: an.dy, an })));
+    const drawables = order.map(([, p]) => ({ y: charPos(p)[1], p })).concat(Object.values(animals).map((an) => ({ y: an.dy, an })));
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
-      if (d.p) {
-        const p = d.p, step = p.moving ? Math.floor(now / 140) % 2 : -1;
-        D.drawChar(ctx, Math.round(p.dx), Math.round(p.dy), p.avatar || {}, p.dir, step);
-      } else {
+      if (d.p) drawPlayer(d.p, now);
+      else {
         const an = d.an;
-        if ((an.flags & 4) && Math.floor(now / 80) % 2) continue; // 맞으면 깜빡
-        D.drawAnimal(ctx, Math.round(an.dx), Math.round(an.dy), an.kind, an.dir, an.moving ? Math.floor(now / 180) % 2 : -1);
-        if (an.flags & 1) { // 선물 준비 완료
+        if ((an.flags & 4) && Math.floor(now / 80) % 2) continue;
+        D.drawAnimal(ctx, Math.round(an.dx), Math.round(an.dy), an.kind, an.dir, an.moving ? Math.floor(now / 160) % 2 : -1, now);
+        if (an.flags & 1) {
           const id = S.ANIMALS[an.kind].produce;
           const bx = Math.round(an.dx) - 6, by = Math.round(an.dy) - 30 + Math.round(Math.sin(now / 250));
           ctx.fillStyle = '#4a3b5c'; ctx.fillRect(bx - 1, by - 1, 14, 14);
@@ -799,7 +1199,6 @@
         }
       }
     }
-    // 화살
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i], age = (now - a.t) / 220;
       if (age > 1) { arrows.splice(i, 1); continue; }
@@ -809,7 +1208,6 @@
       ctx.beginPath(); ctx.moveTo(hx - ux * 7, hy - uy * 7); ctx.lineTo(hx, hy); ctx.stroke();
       ctx.fillStyle = '#9aa7b0'; ctx.fillRect(hx - 1, hy - 1, 2, 2);
     }
-    // 낚싯줄
     for (const [id, p] of order) {
       if (!p.fishing) continue;
       const bite = id === myId && fishing && fishing.bite;
@@ -822,8 +1220,11 @@
       if (bite) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(bx - 4, by + 2, 8, 0.6); }
     }
 
-    // 화면 글씨 (이름, 말풍선, 표지판, 힌트)
+    // 동굴 어둠
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    drawDarkness(now);
+
+    // 화면 글씨 (이름, 말풍선, 표지판, 힌트)
     for (const k of signs) {
       const o = world.objects.get(k);
       if (!o || !o.text) continue;
@@ -831,6 +1232,15 @@
       if (Math.hypot(x * TILE + 8 - me.x, y * TILE + 8 - me.y) > TILE * 6) continue;
       const [sx, sy] = toScreen(x * TILE + 8, y * TILE);
       bubble(sx, sy - 2 * dpr, o.text, { size: 11, maxW: 140, bg: '#fff3d6', tail: false });
+    }
+    for (const an of Object.values(animals)) {
+      if (!an.pname || Math.hypot(an.dx - me.x, an.dy - me.y) > TILE * 5) continue;
+      const [sx, sy] = toScreen(an.dx, an.dy - 16);
+      ctx.font = `${10 * dpr}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const label = `🐶 ${an.pname}`, w = ctx.measureText(label).width + 8 * dpr;
+      ctx.fillStyle = isMyPet(an) ? 'rgba(255,92,138,0.85)' : 'rgba(74,59,92,0.7)';
+      roundRect(sx - w / 2, sy - 16 * dpr, w, 13 * dpr, 4 * dpr); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(label, sx, sy - 9.5 * dpr);
     }
     for (const [id, p] of order) drawLabels(p, id, now);
     for (let i = fxs.length - 1; i >= 0; i--) {
@@ -853,14 +1263,20 @@
         bubble(sx, sy + 22 * dpr, h, { size: 11, tail: false, bg: 'rgba(74,59,92,0.85)', color: '#fff' });
       }
     }
+    if (now < buffUntil) {
+      ctx.font = `${12 * dpr}px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(74,59,92,0.85)'; roundRect(12 * dpr, 64 * dpr, 118 * dpr, 20 * dpr, 4 * dpr); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(`💨 빨라짐 ${Math.ceil((buffUntil - now) / 1000)}초`, 18 * dpr, 68 * dpr);
+    }
   }
 
-  let last = performance.now();
+  let last = performance.now(), lastMM = 0;
   function loop(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     update(dt, now);
     render(now);
+    if (now - lastMM > 66) { lastMM = now; drawMinimap(now); }
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);

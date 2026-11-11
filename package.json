@@ -1,7 +1,7 @@
 {
-  "name": "secret-hideout",
-  "version": "1.0.0",
-  "description": "2D 픽셀 실시간 멀티플레이 비밀 아지트",
+  "name": "al-pdf",
+  "version": "2.0.0",
+  "description": "알PDF - 2D 픽셀 실시간 멀티플레이 마을 게임",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
