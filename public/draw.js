@@ -118,6 +118,14 @@
         R('#f2c230', 0, 0, 16, 16); R('#d9a81c', 0, 15, 16, 1); R('#d9a81c', 15, 0, 1, 16);
         R('#ffe27a', 2, 2, 5, 1); R('#ffe27a', 2, 2, 1, 4); R('#fff6c9', 3, 3, 1, 1);
         break;
+      case 'path_park':
+        R('#c9c2b8', 0, 0, 16, 16);
+        for (let j = 0; j < 4; j++) { R('#a89f93', 0, j * 4 + 3, 16, 1); R('#a89f93', (j % 2 ? 0 : 4) + 0, j * 4, 1, 3); R('#a89f93', (j % 2 ? 8 : 12), j * 4, 1, 3); }
+        R('#d9734f', 1, 1, 2, 2); R('#d9734f', 9, 9, 2, 2);
+        break;
+      case 'floor_cafe':
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) R((i + j) % 2 ? '#2b2233' : '#f4efe6', i * 4, j * 4, 4, 4);
+        break;
       case 'floor_hex':
         R('#f2e6c9', 0, 0, 16, 16);
         for (const [hx, hy] of [[0, 0], [8, 4], [0, 8], [8, 12]]) { R('#d9c79f', hx, hy, 8, 1); R('#d9c79f', hx, hy, 1, 4); R('#fff6e0', hx + 2, hy + 1, 3, 1); }
@@ -724,6 +732,105 @@
         if (o.locked) { R('#9aa7b0', 6, 6, 4, 5); R('#c4ced6', 7, 4, 2, 2); R('#2b2233', 7, 8, 2, 1); }
         else { R('#ffd34d', 7, 7, 2, 3); R('#b58a12', 7, 9, 2, 1); }
         break;
+      // ── 공원
+      case 'park_bench':
+        shadow(R, 14);
+        R('#5a8a3a', 1, 2, 14, 2); R('#5a8a3a', 1, 5, 14, 2); R('#3b3740', 1, 7, 14, 1);
+        R('#6e9e4a', 1, 8, 14, 3); R('#8ab86a', 1, 8, 14, 1); R('#3b3740', 1, 2, 1, 13); R('#3b3740', 14, 2, 1, 13); R('#3b3740', 2, 11, 2, 4); R('#3b3740', 12, 11, 2, 4);
+        break;
+      case 'picnic_table':
+        shadow(R, 14);
+        R('#a8743f', 0, 2, 16, 2); R('#a8743f', 0, 12, 16, 2); R('#b88252', 2, 5, 12, 6); R('#c99558', 2, 5, 12, 1); R('#8b5a3c', 2, 7, 12, 1); R('#8b5a3c', 2, 9, 12, 1);
+        R('#7a4e2d', 3, 11, 2, 1); R('#7a4e2d', 11, 11, 2, 1);
+        break;
+      case 'swing':
+        R('#6e4626', 1, 0, 2, 16); R('#6e4626', 13, 0, 2, 16); R('#8b5a3c', 1, 0, 14, 2);
+        R('#c4c0ba', 5, 2, 1, 9); R('#c4c0ba', 10, 2, 1, 9); R('#e85d5d', 4, 10, 8, 2); R('#b84444', 4, 12, 8, 1);
+        break;
+      case 'slide':
+        R('rgba(0,0,0,0.12)', 1, 14, 14, 2);
+        R('#6ec6ff', 9, 1, 6, 12); R('#4a9fd6', 9, 1, 1, 12); R('#ffd34d', 10, 2, 4, 2); R('#ffd34d', 10, 6, 4, 2); R('#ffd34d', 10, 10, 4, 2);
+        R('#ff8fab', 1, 9, 9, 3); R('#ff8fab', 3, 6, 7, 3); R('#ff8fab', 6, 3, 4, 3); R('#e0708f', 1, 12, 9, 1);
+        break;
+      case 'flower_bed': {
+        R('#8b5a3c', 0, 9, 16, 7); R('#a8743f', 0, 9, 16, 1); R('#6b4a2f', 1, 10, 14, 4);
+        const cols = ['#ff8fab', '#ffd34d', '#ffffff', '#c9a0ff', '#e85d5d'];
+        for (let i = 0; i < 6; i++) { const fx = 1 + i * 2 + (i % 2), fy = 4 + (i % 3) * 2; R('#4caf50', fx, fy + 2, 1, 10 - fy); R(cols[(i + x) % 5], fx - 1, fy, 3, 2); }
+        break;
+      }
+      case 'hedge': {
+        const g1 = '#3f8f45', g2 = '#5fb35f';
+        R(g1, 2, 3, 12, 11); R(g2, 3, 3, 4, 2); R('#2f7236', 3, 12, 10, 2);
+        if (sameT(-1, 0)) R(g1, 0, 3, 3, 11);
+        if (sameT(1, 0)) R(g1, 13, 3, 3, 11);
+        if (sameT(0, -1)) R(g1, 2, 0, 12, 4);
+        if (sameT(0, 1)) R(g1, 2, 12, 12, 4);
+        break;
+      }
+      case 'trash_bin':
+        R('rgba(0,0,0,0.12)', 3, 14, 10, 2);
+        R('#4caf50', 4, 4, 8, 10); R('#3d8f40', 4, 4, 8, 1); R('#3d8f40', 6, 6, 1, 7); R('#3d8f40', 9, 6, 1, 7); R('#2f7236', 3, 2, 10, 2); R('#ffffff', 7, 8, 2, 2);
+        break;
+      case 'vending_machine':
+        R('rgba(0,0,0,0.12)', 1, 14, 14, 2);
+        R('#e85d5d', 2, 0, 12, 15); R('#b84444', 2, 14, 12, 1); R('#bfe9ff', 3, 2, 7, 8);
+        for (let i = 0; i < 3; i++) { R(['#ffd34d', '#6ec6ff', '#7ed492'][i], 4 + i * 2, 3, 1, 2); R(['#ff8fab', '#ffffff', '#ffb36b'][i], 4 + i * 2, 6, 1, 2); }
+        R('#2b2233', 3, 11, 7, 2); R('#ffffff', 11, 3, 2, 1); R('#ffd34d', 11, 6, 2, 2);
+        break;
+      case 'parasol':
+        R('rgba(0,0,0,0.15)', 1, 13, 14, 3);
+        R('#ffffff', 7, 5, 2, 10);
+        R('#ff8fab', 1, 3, 14, 3); R('#ff8fab', 3, 1, 10, 2); R('#ffffff', 5, 1, 2, 5); R('#ffffff', 10, 1, 2, 5); R('#e0708f', 1, 5, 14, 1);
+        break;
+      case 'garden_light':
+        R('#3b3740', 6, 14, 4, 2); R('#5a5560', 7, 6, 2, 8); R('#3b3740', 5, 2, 6, 1); R('#fff3a3', 5, 3, 6, 3); R('#3b3740', 5, 6, 6, 1);
+        break;
+      // ── 카페
+      case 'cafe_table':
+        R('rgba(0,0,0,0.12)', 3, 14, 10, 2);
+        R('#3b3740', 7, 9, 2, 5); R('#3b3740', 5, 14, 6, 1);
+        R('#f4efe6', 2, 4, 12, 5); R('#ffffff', 3, 4, 10, 1); R('#d9d0bf', 2, 8, 12, 1);
+        break;
+      case 'cafe_chair':
+        R('#3b3740', 4, 1, 8, 6); R('#e85d5d', 5, 2, 6, 4);
+        R('#e85d5d', 3, 7, 10, 3); R('#ff8080', 3, 7, 10, 1); R('#3b3740', 4, 10, 1, 5); R('#3b3740', 11, 10, 1, 5);
+        break;
+      case 'bar_stool':
+        R('rgba(0,0,0,0.12)', 4, 14, 8, 2);
+        R('#3b3740', 7, 6, 2, 8); R('#3b3740', 5, 13, 6, 1); R('#9aa7b0', 5, 10, 6, 1);
+        R('#8b5a3c', 4, 3, 8, 3); R('#a8743f', 4, 3, 8, 1);
+        break;
+      case 'cafe_counter':
+        R('#5a4a40', 0, 6, 16, 9); R('#e8d9c6', 0, 3, 16, 4); R('#d9c3a5', 0, 6, 16, 1);
+        if (!sameT(-1, 0)) R('#3b2f2a', 0, 3, 1, 12);
+        if (!sameT(1, 0)) R('#3b2f2a', 15, 3, 1, 12);
+        R('#7a6a5a', 2, 8, 12, 1); R('#ffd34d', 7, 10, 2, 1);
+        break;
+      case 'cake_showcase':
+        R('rgba(0,0,0,0.12)', 0, 14, 16, 2);
+        R('#fdfaf3', 0, 9, 16, 6); R('#e6dfd1', 0, 14, 16, 1); R('#bfe9ff', 1, 1, 14, 8); R('#9fdcf7', 1, 1, 14, 1); R('#9fc7e0', 0, 0, 16, 1);
+        R('#ffffff', 2, 5, 4, 3); R('#ff8fab', 2, 4, 4, 1); R('#e8364f', 3, 3, 1, 1); R('#8b5a3c', 7, 5, 3, 3); R('#ffd34d', 11, 5, 3, 3); R('#ffffff', 11, 4, 3, 1);
+        break;
+      case 'menu_board':
+        R('#8b5a3c', 3, 11, 2, 5); R('#8b5a3c', 11, 11, 2, 5);
+        R('#8b5a3c', 1, 1, 14, 11); R('#2f4a3a', 2, 2, 12, 9);
+        R('#ffffff', 3, 3, 6, 1); R('#ffffff', 3, 5, 8, 1); R('#ffd34d', 3, 7, 5, 1); R('#ff8fab', 3, 9, 7, 1);
+        break;
+      case 'bread_shelf':
+        R('#a8743f', 1, 0, 14, 16); R('#8b5a3c', 1, 5, 14, 1); R('#8b5a3c', 1, 10, 14, 1); R('#8b5a3c', 1, 15, 14, 1);
+        R('#e2b07c', 2, 2, 5, 3); R('#d9963f', 9, 2, 5, 3); R('#f2d16b', 2, 7, 4, 3); R('#e2b07c', 7, 7, 3, 3); R('#c9894a', 11, 7, 3, 3);
+        R('#d9963f', 3, 12, 10, 3); R('#f2d16b', 4, 12, 2, 1);
+        break;
+      case 'coffee_cup':
+        R('#ffffff', 4, 8, 7, 6); R('#e6e6f0', 4, 13, 7, 1); R('#8b5a3c', 5, 9, 5, 1); R('#ffffff', 11, 9, 2, 3); R('#e6e6f0', 2, 14, 11, 1);
+        R('rgba(255,255,255,0.7)', 6, 5, 1, 2); R('rgba(255,255,255,0.7)', 8, 4, 1, 2);
+        break;
+      case 'cake':
+        R('#e6e6f0', 2, 14, 12, 1); R('#fff7ec', 3, 8, 10, 6); R('#ff8fab', 3, 8, 10, 2); R('#e8364f', 5, 6, 2, 2); R('#e8364f', 9, 6, 2, 2); R('#ffd1dc', 3, 11, 10, 1);
+        break;
+      case 'bread_basket':
+        R('#a8743f', 2, 9, 12, 5); R('#8b5a3c', 2, 11, 12, 1); R('#e2b07c', 3, 6, 4, 4); R('#d9963f', 7, 5, 5, 4); R('#f2d16b', 10, 7, 3, 3); R('#ffffff', 2, 9, 12, 1);
+        break;
       case 'music_box':
         shadow(R, 10);
         R('#c0392b', 3, 6, 10, 8); R('#e74c3c', 3, 6, 10, 2); R('#ffd34d', 3, 9, 10, 1); R('#ffd34d', 13, 9, 2, 1); R('#ffd34d', 14, 7, 1, 3);
@@ -834,6 +941,28 @@
   };
   SIDE.sofa_blue = SIDE.sofa_green = SIDE.sofa;
   SIDE.bed_pink = SIDE.bed_blue = SIDE.royal_bed = SIDE.bed;
+  SIDE.cafe_chair = (R, v) => {
+    if (v === 'side') { R('#3b3740', 4, 10, 1, 5); R('#3b3740', 10, 10, 1, 5); R('#e85d5d', 3, 7, 9, 3); R('#ff8080', 3, 7, 9, 1); R('#3b3740', 10, 1, 2, 9); R('#e85d5d', 10, 2, 2, 4); }
+    else { R('#3b3740', 4, 13, 1, 3); R('#3b3740', 11, 13, 1, 3); R('#e85d5d', 3, 4, 10, 3); R('#3b3740', 4, 6, 8, 7); R('#e85d5d', 5, 7, 6, 3); }
+  };
+  SIDE.park_bench = (R, v) => {
+    if (v === 'side') { R('#3b3740', 3, 10, 2, 5); R('#3b3740', 10, 10, 2, 5); R('#5a8a3a', 3, 7, 9, 3); R('#7aa85a', 3, 7, 9, 1); R('#3b3740', 10, 1, 2, 10); R('#5a8a3a', 11, 2, 1, 7); }
+    else { R('#5a8a3a', 0, 3, 16, 4); R('#3b3740', 0, 7, 16, 1); R('#5a8a3a', 0, 8, 16, 2); R('#5a8a3a', 0, 11, 16, 2); R('#3b3740', 2, 13, 2, 3); R('#3b3740', 12, 13, 2, 3); }
+  };
+  SIDE.picnic_table = (R, v, o, same, x, y) => {
+    if (v === 'side') { R('#a8743f', 1, 3, 3, 12); R('#a8743f', 12, 3, 3, 12); R('#b88252', 5, 1, 6, 14); R('#c99558', 5, 1, 6, 1); R('#7a4e2d', 5, 13, 6, 2); }
+    else SIDE.table(R, 'back', o, same, x, y);
+  };
+  SIDE.cafe_counter = (R, v, o, same) => {
+    if (v === 'side') {
+      R('#3b2f2a', 3, 0, 10, 16); R('#d9c3a5', 2, 0, 1, 16); R('#e8d9c6', 3, 0, 10, 1);
+      if (!same(0, 1)) { R('#5a4a40', 2, 10, 11, 6); R('#3b2f2a', 2, 10, 11, 1); R('#ffd34d', 7, 12, 2, 1); }
+    } else {
+      R('#5a4a40', 0, 3, 16, 12); R('#3b2f2a', 0, 3, 16, 1); R('#e8d9c6', 0, 1, 16, 3);
+      if (!same(-1, 0)) R('#3b2f2a', 0, 1, 1, 14);
+      if (!same(1, 0)) R('#3b2f2a', 15, 1, 1, 14);
+    }
+  };
 
   function drawFacing(g, ox, oy, o, x, y, world) {
     const r = o.r || 0;
@@ -852,27 +981,60 @@
       } else art(pen(g, ox, oy), r === 2 ? 'back' : 'side', o, same, x, y);
       return;
     }
-    // 그림이 없는 가구: 앞모습을 바탕으로 "서 있는" 옆·뒷모습 흉내
-    tA.clearRect(0, 0, 16, 16);
-    drawObject(pen(tA, 0, 0), Object.assign({}, o, { r: 0 }), x, y, null);
-    tB.clearRect(0, 0, 16, 16);
-    tB.globalCompositeOperation = 'source-over';
-    tB.drawImage(tmpA, 0, 0);
-    tB.globalCompositeOperation = 'source-atop';
-    tB.fillStyle = r === 2 ? 'rgba(60,35,20,0.38)' : 'rgba(60,35,20,0.18)';
-    tB.fillRect(0, 0, 16, 16);
-    tB.globalCompositeOperation = 'source-over';
+    // 그림이 없는 가구: 앞모습을 바탕으로 진짜 옆모습·뒷모습을 만들어요 (만든 그림은 기억해 둬요)
+    const img = sideImage(o, r === 2 ? 2 : 1);
     g.save();
     g.imageSmoothingEnabled = false;
-    if (r === 2) g.drawImage(tmpB, ox, oy);
-    else {
-      g.translate(ox + 8, oy);
-      g.scale(r === 3 ? -0.62 : 0.62, 1);
-      g.drawImage(tmpB, -8, 0);
-      g.fillStyle = 'rgba(60,35,20,0.35)';
-      g.fillRect(r === 3 ? -8 : 7, 2, 1, 13);
-    }
+    if (r === 3) { g.translate(ox + 16, oy); g.scale(-1, 1); g.drawImage(img, 0, 0); }
+    else g.drawImage(img, ox, oy);
     g.restore();
+  }
+  // 옆모습(v=1, 왼쪽을 봄): 가구 모양 그대로 "옆판"을 칠하고, 앞면 무늬는 왼쪽 가장자리에 얇게 보여요. 윗면은 밝게.
+  // 뒷모습(v=2): 같은 모양에 "뒤판"을 칠하고 가운데 이음선·윗면 테두리를 그려요.
+  const sideCache = new Map();
+  function sideImage(o, v) {
+    const k = `${o.t}|${v}|${o.on ? 1 : 0}|${o.locked ? 1 : 0}`;
+    if (sideCache.has(k)) return sideCache.get(k);
+    tA.clearRect(0, 0, 16, 16);
+    drawObject(pen(tA, 0, 0), { t: o.t, on: o.on, locked: o.locked, open: o.open }, 0, 0, null);
+    const src = tA.getImageData(0, 0, 16, 16).data;
+    const op = (x, y) => src[(y * 16 + x) * 4 + 3] > 200;
+    // 모양 범위와 가장 많이 쓴 색(= 몸통 색)
+    let x0 = 16, x1 = -1, y0 = 16, y1 = -1;
+    const count = {};
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      if (!op(x, y)) continue;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      const i = (y * 16 + x) * 4, c = (src[i] << 16) | (src[i + 1] << 8) | src[i + 2];
+      count[c] = (count[c] || 0) + 1;
+    }
+    const out = document.createElement('canvas'); out.width = out.height = 16;
+    if (x1 < 0) { sideCache.set(k, out); return out; }
+    const body = +Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
+    const br = body >> 16, bg = (body >> 8) & 255, bb = body & 255;
+    const mix = (f) => [Math.round(br * f), Math.round(bg * f), Math.round(bb * f)].map((c) => Math.min(255, c));
+    const panel = mix(v === 2 ? 0.78 : 0.9), dark = mix(v === 2 ? 0.6 : 0.68), light = mix(1.18);
+    const bw = x1 - x0 + 1, strip = Math.max(2, Math.min(4, Math.round(bw / 3)));
+    const oc = out.getContext('2d'), od = oc.createImageData(16, 16), d = od.data;
+    const put = (x, y, rgb, a = 255) => { const i = (y * 16 + x) * 4; d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2]; d[i + 3] = a; };
+    const topOf = []; for (let x = 0; x < 16; x++) { topOf[x] = -1; for (let y = 0; y < 16; y++) if (op(x, y)) { topOf[x] = y; break; } }
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const i = (y * 16 + x) * 4;
+      if (!op(x, y)) { if (src[i + 3] > 0) { d[i] = src[i]; d[i + 1] = src[i + 1]; d[i + 2] = src[i + 2]; d[i + 3] = src[i + 3]; } continue; }
+      if (y === topOf[x] || y === topOf[x] + 1) { put(x, y, light); continue; }           // 윗면
+      if (v === 1 && x < x0 + strip) {                                                     // 앞면 무늬 (얇게)
+        const sx = x0 + Math.min(bw - 1, Math.floor((x - x0) * bw / strip));
+        const j = (y * 16 + sx) * 4;
+        if (src[j + 3] > 200) { put(x, y, [Math.round(src[j] * 0.92), Math.round(src[j + 1] * 0.92), Math.round(src[j + 2] * 0.92)]); continue; }
+      }
+      if (v === 1 && x === x0 + strip) { put(x, y, dark); continue; }                       // 모서리
+      if (v === 2 && (x === Math.floor((x0 + x1) / 2) || x === x0 || x === x1)) { put(x, y, dark); continue; } // 뒤판 이음선
+      if (y === y1) { put(x, y, dark); continue; }                                          // 바닥 그림자
+      put(x, y, panel);
+    }
+    oc.putImageData(od, 0, 0);
+    sideCache.set(k, out);
+    return out;
   }
   // 조리대·싱크대 위에 올린 물건 (작게, 윗면에 앉혀요)
   const APPLIANCE = new Set(['microwave', 'coffee_machine', 'rice_cooker']);

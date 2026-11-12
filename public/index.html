@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>알PDF</title>
   <link rel="icon" id="favicon" href="data:," />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri/dist/galmuri.css" />
@@ -195,7 +195,63 @@
     .tcell.no { opacity: .35; cursor: not-allowed; }
     .tcell:disabled { cursor: default; }
     .tcell .n { position: absolute; right: 2px; bottom: 0; font-size: 10px; }
-    @media (max-width: 560px) { .tcols { grid-template-columns: 1fr; } #mmWrap { display: none; } }
+    @media (max-width: 560px) { .tcols { grid-template-columns: 1fr; } }
+    /* 📱 휴대폰 */
+    html, body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    #modalBody, #log, #who { touch-action: pan-y; }
+    #touch { display: none; }
+    body.touch #touch { display: block; }
+    #joy { position: fixed; left: max(14px, env(safe-area-inset-left)); bottom: 74px; width: 124px; height: 124px; border-radius: 50%;
+      background: rgba(255, 247, 236, .35); border: 3px solid rgba(74, 59, 92, .55); z-index: 15; touch-action: none; }
+    #joyKnob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%;
+      background: rgba(255, 143, 171, .9); border: 3px solid var(--ink); pointer-events: none; }
+    #tbtns { position: fixed; right: max(10px, env(safe-area-inset-right)); bottom: 74px; display: grid; grid-template-columns: repeat(3, 54px);
+      grid-template-areas: ". chat r" ". x e" ". use use"; gap: 8px; z-index: 15; }
+    .tbtn { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--ink); background: rgba(255, 247, 236, .94); font: 15px var(--font);
+      box-shadow: 2px 2px 0 var(--ink); touch-action: manipulation; position: relative; display: grid; place-items: center; line-height: 1; padding: 0; }
+    .tbtn small { display: block; font-size: 8px; opacity: .7; margin-top: -10px; }
+    .tbtn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); background: #ffe3ea; }
+    #bChat { grid-area: chat; } #bR { grid-area: r; } #bX { grid-area: x; } #bE { grid-area: e; }
+    #bUse { grid-area: use; width: 116px; border-radius: 28px; background: var(--pink); color: #fff; font-size: 17px; text-shadow: 1px 1px 0 var(--ink); }
+    body.touch #chat { display: none; }
+    body.touch.chatOpen #chat { display: flex; top: 54px; bottom: auto; left: 6px; width: min(420px, calc(100vw - 12px)); z-index: 16; }
+    body.touch #log { height: 120px; }
+    @media (max-width: 700px) {
+      #top { top: 6px; left: 6px; padding: 4px; gap: 4px; max-width: calc(100vw - 116px); }
+      #top .btn { font-size: 13px; padding: 2px 6px; box-shadow: 1px 1px 0 var(--ink); border-width: 2px; }
+      #top .btn small, #top .btn .lbl { display: none; }
+      #coins { font-size: 12px; min-width: 0; padding: 0 4px; }
+      .lvbar { width: 30px; }
+      #side { top: 6px; right: 6px; gap: 4px; }
+      #mmWrap { padding: 2px; } #mmWrap .cap { display: none; }
+      #who { min-width: 0; padding: 4px 6px; font-size: 11px; }
+      #who ul { display: none; } #who.open ul { display: grid; }
+      #hotbarWrap { bottom: 4px; gap: 3px; }
+      #hotbar { gap: 2px; padding: 3px; }
+      #hotbar .slot { width: 36px; height: 36px; border-width: 2px; }
+      #hotbar img.ic { width: 26px; height: 26px; }
+      #itemName { font-size: 11px; }
+      #toasts { top: 50px; width: calc(100vw - 20px); }
+      .toast { font-size: 12px; padding: 5px 10px; }
+      #modal .box { width: calc(100vw - 10px); max-height: calc(100vh - 10px); max-height: calc(100dvh - 10px); }
+      #modal header { padding: 8px 10px; } #modal header h2 { font-size: 15px; }
+      #modalBody { padding: 10px; }
+      .grid { grid-template-columns: repeat(9, 32px); gap: 3px; }
+      .grid .slot { width: 32px; height: 32px; border-width: 2px; }
+      .grid img.ic { width: 24px; height: 24px; }
+      .row { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+      .row .grow { min-width: 60%; }
+      .tabs .btn { font-size: 11px; padding: 2px 6px; }
+      .colcell { width: 54px; }
+      .tinv .tcell { width: 38px; height: 38px; }
+      #reward .box { padding: 14px; }
+      .keys { grid-template-columns: 1fr; gap: 2px 8px; }
+    }
+    @media (max-height: 460px) and (orientation: landscape) {
+      #joy { bottom: 54px; width: 108px; height: 108px; }
+      #tbtns { bottom: 54px; grid-template-columns: repeat(3, 48px); }
+      .tbtn { width: 48px; height: 48px; } #bUse { width: 104px; }
+    }
   </style>
 </head>
 <body>
@@ -204,12 +260,12 @@
   <div id="top" class="panel hidden">
     <button id="lvBox" class="btn" data-open="level"><b id="lvText">Lv.1</b><span class="lvbar"><i id="lvBar"></i></span></button>
     <span id="coins">💰 0</span>
-    <button class="btn" data-open="bag">🎒 가방 <small>I</small></button>
-    <button class="btn" data-open="avatar">👗 꾸미기 <small>C</small></button>
-    <button class="btn" data-open="quests">📜 퀘스트 <small>Q</small><span id="qBadge" class="badge"></span></button>
-    <button class="btn" data-open="col">📖 도감 <small>K</small><span id="cBadge" class="badge"></span></button>
-    <button class="btn" data-open="board">📌 게시판<span id="bBadge" class="badge">N</span></button>
-    <button class="btn" data-open="help">❓ 조작법</button>
+    <button class="btn" data-open="bag">🎒<span class="lbl"> 가방</span> <small>I</small></button>
+    <button class="btn" data-open="avatar">👗<span class="lbl"> 꾸미기</span> <small>C</small></button>
+    <button class="btn" data-open="quests">📜<span class="lbl"> 퀘스트</span> <small>Q</small><span id="qBadge" class="badge"></span></button>
+    <button class="btn" data-open="col">📖<span class="lbl"> 도감</span> <small>K</small><span id="cBadge" class="badge"></span></button>
+    <button class="btn" data-open="board">📌<span class="lbl"> 게시판</span><span id="bBadge" class="badge">N</span></button>
+    <button class="btn" data-open="help">❓<span class="lbl"> 조작법</span></button>
   </div>
   <div id="side" class="hidden">
     <div id="mmWrap" class="panel">
@@ -230,6 +286,17 @@
     <div id="hotbar" class="panel"></div>
   </div>
   <div id="toasts"></div>
+  <!-- 📱 휴대폰 조작 -->
+  <div id="touch">
+    <div id="joy"><div id="joyKnob"></div></div>
+    <div id="tbtns">
+      <button class="tbtn" id="bChat">💬<span id="bChatN" class="badge"></span></button>
+      <button class="tbtn" id="bR">R<small>돌리기</small></button>
+      <button class="tbtn" id="bX">X<small>부수기</small></button>
+      <button class="tbtn" id="bE">E<small>상호작용</small></button>
+      <button class="tbtn big" id="bUse">사용</button>
+    </div>
+  </div>
   <div id="status" class="panel">연결이 끊겼어요... 다시 연결 중 🔄</div>
   <div id="tradeAsk" class="panel hidden">
     <span id="tradeAskText"></span>
@@ -267,8 +334,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=8"></script>
-  <script src="draw.js?v=8"></script>
-  <script src="client.js?v=8"></script>
+  <script src="shared.js?v=9"></script>
+  <script src="draw.js?v=9"></script>
+  <script src="client.js?v=9"></script>
 </body>
 </html>

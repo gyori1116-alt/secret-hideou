@@ -3,8 +3,11 @@
   'use strict';
   const S = window.SHARED, D = window.DRAW;
   const { TILE, W, H } = S;
-  const ZOOM = 3;
+  let ZOOM = 3;               // 화면 확대 (휴대폰처럼 작은 화면은 2)
   const SPEED = 80;
+  // 📱 터치 기기면 조이스틱·버튼을 보여줘요
+  const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+  if (TOUCH) document.body.classList.add('touch');
   const BUBBLE_MS = 6000;
   const FONT = "'Galmuri11', 'Malgun Gothic', sans-serif";
   const $ = (id) => document.getElementById(id);
@@ -96,7 +99,8 @@
   function mmPixel(x, y) { mmb.fillStyle = mmColor(x, y); mmb.fillRect(x, y, 1, 1); }
   let mmBig = false;
   function mmSize() {
-    const cssW = mmBig ? 300 : 160;
+    const small = innerWidth < 700;
+    const cssW = mmBig ? (small ? Math.min(260, innerWidth - 24) : 300) : (small ? 96 : 160);
     mm.style.width = cssW + 'px'; mm.style.height = Math.round(cssW * H / W) + 'px';
     mm.width = Math.round(cssW * dpr); mm.height = Math.round(cssW * H / W * dpr);
   }
@@ -149,6 +153,7 @@
   let dpr = 1, Sc = ZOOM;
   function resize() {
     dpr = window.devicePixelRatio || 1;
+    ZOOM = Math.min(innerWidth, innerHeight) < 560 ? 2 : 3;
     Sc = ZOOM * dpr;
     canvas.width = Math.floor(innerWidth * dpr);
     canvas.height = Math.floor(innerHeight * dpr);
@@ -219,6 +224,10 @@
   }
   setFavicon(false);
   function notifyUnread() {
+    if (TOUCH && !document.body.classList.contains('chatOpen')) {
+      chatUnread++;
+      $('bChatN').textContent = chatUnread; $('bChatN').style.display = 'inline-block';
+    }
     if (!document.hidden && document.hasFocus()) return;
     unread++;
     document.title = `💬 새 메시지 ${unread}개`;
@@ -604,6 +613,57 @@
   canvas.addEventListener('mousemove', (e) => { mouse.sx = e.clientX; mouse.sy = e.clientY; mouse.in = true; mouse.t = performance.now(); });
   canvas.addEventListener('mouseleave', () => { mouse.in = false; });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  // ───────── 📱 터치 조작: 조이스틱 + 버튼 + 화면 톡(겨누기) ─────────
+  let chatUnread = 0;
+  const joy = { id: null, x: 0, y: 0 };
+  {
+    const base = $('joy'), knob = $('joyKnob');
+    const R = 44;
+    const move = (e) => {
+      const r = base.getBoundingClientRect();
+      let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      joy.x = dx / R; joy.y = dy / R;
+    };
+    const end = (e) => {
+      if (e.pointerId !== joy.id) return;
+      joy.id = null; joy.x = joy.y = 0; knob.style.transform = '';
+    };
+    base.addEventListener('pointerdown', (e) => { e.preventDefault(); joy.id = e.pointerId; base.setPointerCapture(e.pointerId); move(e); });
+    base.addEventListener('pointermove', (e) => { if (e.pointerId === joy.id) move(e); });
+    base.addEventListener('pointerup', end);
+    base.addEventListener('pointercancel', end);
+    const tap = (id, fn) => $(id).addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (!my) return;
+      if (!$('reward').classList.contains('hidden')) { rewardQueue.shift(); renderReward(); return; }
+      if (modal) return;
+      target = computeTarget();
+      fn();
+    });
+    tap('bUse', () => doUse());
+    tap('bE', () => doInteract());
+    tap('bX', () => doBreak());
+    tap('bR', () => doRotate());
+    $('bChat').addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const open = document.body.classList.toggle('chatOpen');
+      if (open) { chatUnread = 0; $('bChatN').style.display = 'none'; const l = $('log'); l.scrollTop = l.scrollHeight; }
+      else chatInput.blur();
+    });
+    // 화면을 톡: 그 칸을 겨눠요 (손이 닿는 칸이면 하얀 네모가 옮겨가요)
+    canvas.addEventListener('touchstart', (e) => {
+      if (!my || modal) return;
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      mouse.sx = t.clientX; mouse.sy = t.clientY; mouse.in = true; mouse.t = performance.now() + 6000;
+      target = computeTarget();
+    }, { passive: false });
+    $('who').querySelector('b').addEventListener('click', () => $('who').classList.toggle('open'));
+  }
+
   canvas.addEventListener('mousedown', (e) => {
     if (!my || modal) return;
     mouse.sx = e.clientX; mouse.sy = e.clientY; mouse.in = true; mouse.t = performance.now();
@@ -632,7 +692,7 @@
 
   // ───────── 창 ─────────
   let modal = null, modalArg = null;
-  let bagTab = 'inv', pick = null, shopTab = 'farm', questTab = 'd', avDraft = null, avTimer = null;
+  let bagTab = 'inv', pick = null, shopTab = 'farm', questTab = 'c', avDraft = null, avTimer = null;
   function openModal(name, arg) {
     if (!my) return;
     if (modal === 'trade' && name !== 'trade' && trade) return showToast('거래 중이에요! 먼저 거래를 끝내주세요');
@@ -762,6 +822,7 @@
   function rewardText(rw) {
     const out = [];
     if (rw.coins) out.push(`💰${rw.coins}`);
+    if (rw.exp) out.push(`⭐${rw.exp}`);
     if (rw.items) for (const [id, n] of Object.entries(rw.items)) out.push(`${itemName(id)} ×${n}${S.ITEMS[id] && S.ITEMS[id].questOnly ? '✨' : ''}`);
     if (rw.unlock) out.push(`${S.COSMETICS[rw.unlock].name}✨ (꾸미기)`);
     return '🎁 ' + out.join(', ');
@@ -792,7 +853,7 @@
   function questReadyCount() {
     if (!my) return 0;
     let n = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
-    for (const t of ['d', 'w', 'm']) if (my.pq[t]) n += my.pq[t].list.filter(pqReady).length;
+    for (const t of ['c', 'd', 'w', 'm']) if (my.pq[t]) n += my.pq[t].list.filter(pqReady).length;
     n += (my.mail || []).length;
     return n;
   }
@@ -814,19 +875,21 @@
     const aCnt = S.QUESTS.filter((q) => !my.claimed.includes(q.id) && (my.stats[q.stat] || 0) >= q.goal).length;
     const rr = mailRows();
     if (rr) body.append(el('b', { style: 'display:block;margin-bottom:6px' }, '📮 우편함'), rr);
-    body.append(tabs(questTab, [['d', '📅 일간' + badge(cnt('d'))], ['w', '🗓️ 주간' + badge(cnt('w'))], ['m', '🌙 월간' + badge(cnt('m'))], ['a', '🏆 업적' + badge(aCnt)]], (t) => { questTab = t; }));
+    body.append(tabs(questTab, [['c', '⬆️ 레벨' + badge(cnt('c'))], ['d', '📅 일간' + badge(cnt('d'))], ['w', '🗓️ 주간' + badge(cnt('w'))], ['m', '🌙 월간' + badge(cnt('m'))], ['a', '🏆 업적' + badge(aCnt)]], (t) => { questTab = t; }));
     const rows = el('div', { class: 'rows' });
     if (questTab !== 'a') {
       const t = questTab;
       const resetTxt = { d: '매일 밤 12시', w: '일요일 밤 12시', m: '다음 달 1일 0시' }[t];
-      body.append(el('div', { class: 'qhead' },
-        t === 'd' ? el('b', {}, `⭐ 일간 레벨 Lv.${my.dlv + 1}`) : null,
-        el('span', {}, `⏰ 초기화까지 ${timeLeft(t)} (${resetTxt}, 한국 시간)`),
-        el('small', {}, t === 'd' ? '깨면 레벨이 올라 더 어려운 퀘스트가 바로 나와요! 못 깬 건 자정에 사라져요.' : t === 'w' ? '보상: 코인 + ✨퀘스트 전용 가구' : '보상: 코인 + ✨퀘스트 전용 꾸미기·가구')));
+      body.append(t === 'c'
+        ? el('div', { class: 'qhead' }, el('b', {}, `⬆️ 레벨 퀘스트 ${my.dlv + 1}단계`),
+          el('small', {}, '깰 때마다 단계가 올라 그 자리에 더 어려운 퀘스트가 나와요. 초기화되지 않아요. 3단계마다 아이템 보상!'))
+        : el('div', { class: 'qhead' },
+          el('span', {}, `⏰ 초기화까지 ${timeLeft(t)} (${resetTxt}, 한국 시간)`),
+          el('small', {}, t === 'd' ? '하루 3개! 깨도 어려워지지 않아요. 못 깬 건 자정에 새 퀘스트로 바뀌어요.' : t === 'w' ? '보상: 코인 + 경험치 + 가끔 ✨퀘스트 전용 가구' : '보상: 코인 + 경험치 + ✨퀘스트 전용 꾸미기·가구')));
       (my.pq[t] ? my.pq[t].list : []).forEach((q) => {
         const v = Math.min(q.goal, Math.max(0, (my.stats[q.stat] || 0) - q.base)), ready = pqReady(q);
         rows.append(el('div', { class: 'row q' + (q.done ? ' done' : '') + (ready ? ' ready' : '') },
-          el('div', { class: 'grow' }, el('b', {}, t === 'd' ? `Lv.${q.lv + 1} ` : ''), q.desc,
+          el('div', { class: 'grow' }, el('b', {}, t === 'c' ? `${q.lv + 1}단계 ` : ''), q.desc,
             el('div', { class: 'bar' }, el('i', { style: `width:${(v / q.goal) * 100}%` })),
             el('small', {}, `${v} / ${q.goal}   ${rewardText(q.reward)}`)),
           ready ? claimBtn(q.reward.items, () => socket.emit('claimP', { type: t, id: q.id }))
@@ -1111,7 +1174,8 @@
       k('K', '도감'),
       k('M', '미니맵 켜기/끄기 (미니맵을 누르면 크게)'),
       k('Enter', '채팅'),
-      k('Esc', '창 닫기 / 낚시 그만')),
+      k('Esc', '창 닫기 / 낚시 그만'),
+      k('📱 휴대폰', '왼쪽 아래 조이스틱 = 이동 · 화면 톡 = 그 칸 겨누기 · [사용]=Space · [E] · [X] · [R] · 💬 = 채팅')),
       el('p', { style: 'font-size:12px;line-height:1.8;margin:14px 0 0' },
         '🗺️ 마을 오른쪽과 아래는 집 짓는 땅이에요. 맨 아래로 내려가면 생산 구역: 왼쪽 ⛏ 동굴(돌·철·금·수정·동굴어), 오른쪽 🌲 나무꾼의 숲(나무·버섯·산딸기·사슴·송어)', el('br'),
         '🍳 요리: 가스레인지·전자레인지·모닥불·벽난로 앞에서 E. 숲 캠프에 모닥불이 있어요', el('br'),
@@ -1131,6 +1195,7 @@
     if (myId && players[myId]) {
       let vx = 0, vy = 0;
       if (!modal && $('reward').classList.contains('hidden')) {
+        if (Math.hypot(joy.x, joy.y) > 0.25) { vx = joy.x; vy = joy.y; } // 📱 조이스틱
         if (keys.has('left')) vx -= 1;
         if (keys.has('right')) vx += 1;
         if (keys.has('up')) vy -= 1;
@@ -1140,9 +1205,16 @@
       if (me.moving) {
         me.pose = null;
         if (fishing) { socket.emit('fishCancel'); fishing = null; }
-        if (vx && vy) { vx *= Math.SQRT1_2; vy *= Math.SQRT1_2; }
-        if (vy < 0) me.dir = 'up'; else if (vy > 0) me.dir = 'down';
-        if (vx < 0) me.dir = 'left'; else if (vx > 0) me.dir = 'right';
+        if (joy.id !== null) {
+          // 조이스틱: 기울인 만큼 속도, 더 많이 기울인 쪽을 바라봐요
+          const m = Math.min(1, Math.hypot(vx, vy)); const d = Math.hypot(vx, vy) || 1;
+          vx = vx / d * m; vy = vy / d * m;
+          me.dir = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 'left' : 'right') : (vy < 0 ? 'up' : 'down');
+        } else {
+          if (vx && vy) { vx *= Math.SQRT1_2; vy *= Math.SQRT1_2; }
+          if (vy < 0) me.dir = 'up'; else if (vy > 0) me.dir = 'down';
+          if (vx < 0) me.dir = 'left'; else if (vx > 0) me.dir = 'right';
+        }
         const sp = SPEED * (now < buffUntil ? 1.4 : 1);
         const stuck = blocked(me.x, me.y);
         const nx = me.x + vx * sp * dt, ny = me.y + vy * sp * dt;

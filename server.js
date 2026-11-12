@@ -191,7 +191,8 @@ function ensureProfile(pr) {
 // 기간 퀘스트: 날짜(한국 시간)가 바뀌면 새로 만들어요
 function newPQ(pr, t, k, idx, list) {
   const avoid = list.filter((q) => !q.done).map((q) => q.stat);
-  const lv = t === 'd' ? pr.dlv : 0;
+  // c(레벨 퀘스트) = 단계, d(일간) = 내 레벨(아주 조금만 어려워져요)
+  const lv = t === 'c' ? pr.dlv : t === 'd' ? lvOf(pr) : 0;
   const q = S.makePQ(t, lv, `${pr.name}|${k}|${t}|${idx}|${lv}`, avoid);
   q.id = t + idx; q.base = pr.stats[q.stat] || 0; q.done = false;
   return q;
@@ -205,6 +206,13 @@ function refreshPQ(pr, now = Date.now()) {
     const list = [];
     for (let i = 0; i < S.PQ_SLOTS[t]; i++) list.push(newPQ(pr, t, per[t].key, i, list));
     pr.pq[t] = { key: per[t].key, list, n: S.PQ_SLOTS[t] };
+    changed = true;
+  }
+  // ⬆️ 레벨 퀘스트: 날짜와 상관없이 계속 이어져요 (처음 한 번만 만들어요)
+  if (!pr.pq.c) {
+    const list = [];
+    for (let i = 0; i < S.PQ_SLOTS.c; i++) list.push(newPQ(pr, 'c', 'chain', i, list));
+    pr.pq.c = { key: 'chain', list, n: S.PQ_SLOTS.c };
     changed = true;
   }
   return changed;
@@ -1055,7 +1063,7 @@ io.on('connection', (socket) => {
 
   socket.on('claimP', ({ type, id } = {}) => {
     const p = me();
-    if (!p || !['d', 'w', 'm'].includes(type)) return;
+    if (!p || !['d', 'w', 'm', 'c'].includes(type)) return;
     const pr = p.prof;
     if (refreshPQ(pr)) { sendMe(p); return toast(socket, '퀘스트가 새로 바뀌었어요!'); }
     const box = pr.pq[type];
@@ -1064,15 +1072,16 @@ io.on('connection', (socket) => {
     if (!q || q.done || (pr.stats[q.stat] || 0) - q.base < q.goal) return;
     if (!room(p, q.reward.items)) return;
     const label = S.PQ_NAMES[type];
-    if (type === 'd') {
+    if (type === 'c') {
+      // 레벨 퀘스트: 단계가 오르고 그 자리에 더 어려운 퀘스트가 바로 나와요
       pr.dlv++;
-      stat(p, 'dailyDone');
-      box.list[idx] = newPQ(pr, 'd', box.key, box.n++, box.list.filter((_, i) => i !== idx));
-      grant(p, `📅 일간 퀘스트 완료! (Lv.${q.lv + 1} → 다음은 Lv.${pr.dlv + 1})`, q.reward);
+      stat(p, 'chainDone');
+      box.list[idx] = newPQ(pr, 'c', box.key, box.n++, box.list.filter((_, i) => i !== idx));
+      grant(p, `⬆️ 레벨 퀘스트 완료! (${q.lv + 1}단계 → 다음은 ${pr.dlv + 1}단계)`, q.reward);
     } else {
       q.done = true;
-      stat(p, type === 'w' ? 'weeklyDone' : 'monthlyDone');
-      grant(p, `🗓️ ${label} 퀘스트 완료!`, q.reward);
+      stat(p, type === 'd' ? 'dailyDone' : type === 'w' ? 'weeklyDone' : 'monthlyDone');
+      grant(p, `${type === 'd' ? '📅' : '🗓️'} ${label} 퀘스트 완료!`, q.reward);
       if (type === 'm') sys(`${p.name} 님이 월간 퀘스트를 깼어요! 🌟`);
     }
     sendMe(p);
@@ -1491,6 +1500,15 @@ function upgradeWorldV4(saved) {
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
     console.log('🗺️  저장된 맵을 불러왔어요');
+  } else if (saved && saved.version === 5 && saved.w === W && saved.h === H) {
+    // 버전 5 → 6: 마을 테두리 나무만 없애요
+    await saveData('world_backup_v5', saved);
+    S.removeTownBorder(saved.objects);
+    world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
+    chests = new Map(Object.entries(saved.chests || {}));
+    (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
+    worldDirty = true;
+    console.log('🗺️  마을 테두리 나무를 없앴어요. 예전 맵은 world_backup_v5 에 보관했어요');
   } else if (saved && saved.version === 4 && saved.w === W && saved.h === H) {
     await saveData('world_backup_v4', saved);
     world = upgradeWorldV4(saved);
