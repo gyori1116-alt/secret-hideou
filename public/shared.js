@@ -5,14 +5,18 @@
 
   const TILE = 16;
   const OW = 64, OH = 48;             // 예전 맵 크기 (마을)
-  const W = 100, H = 112;             // 맵 크기: 마을(왼쪽 위) · 집 짓는 땅(오른쪽 위 + 가운데) · 생산 구역(맨 아래: 왼쪽 동굴, 오른쪽 숲)
-  const CY = 80;                      // 생산 구역이 시작하는 줄
-  const BX = 50;                      // 생산 구역에서 동굴(왼쪽)과 숲(오른쪽)을 나누는 칸
-  const WORLD_VERSION = 6;
+  // 예전(v6) 지도 크기: 마을(왼쪽 위) · 집 짓는 땅 · 맨 아래 생산 구역(동굴·숲). 지도를 만들 때 이 크기로 먼저 그려요.
+  const W0 = 100, H0 = 112, CY0 = 80, BX0 = 50;
+  // v7: 왼쪽으로 TX칸, 위로 TY칸 넓혔어요 → 상점이 가로 한가운데, 위쪽 TY줄은 던전 지대
+  const TX = 44, TY = 40;
+  const W = W0 + TX, H = H0 + TY;     // 144 × 152
+  const CY = TY + CY0;                // 생산 구역(맨 아래)이 시작하는 줄
+  const BX = TX + BX0;                // 생산 구역에서 동굴(왼쪽)과 숲(오른쪽)을 나누는 칸
+  const WORLD_VERSION = 7;
   const REACH = 3.6 * TILE;           // 손이 닿는 거리
   const BITE_WINDOW = 1200;           // 찌가 흔들린 뒤 당길 수 있는 시간(ms)
   const SAPLING_MS = 60000;           // 묘목이 나무가 되는 시간
-  const SPAWN = { x: 31.5 * TILE, y: 19.5 * TILE };
+  const SPAWN = { x: (31.5 + TX) * TILE, y: (19.5 + TY) * TILE };
   const QUEST_ONLY = '✨ 퀘스트 보상으로만 얻을 수 있어요 (상점·거래 불가)';
 
   function hash(x, y) {
@@ -33,7 +37,7 @@
     hoe: { name: '괭이', tool: 'hoe', stack: 1, desc: '땅을 바라보고 Space → 밭이 돼요 (물 빼고 어디든! 바닥 블록은 가방으로 돌아와요)' },
     can: { name: '물뿌리개', tool: 'can', stack: 1, desc: '심은 작물에 Space → 물을 줘요' },
     rod: { name: '낚싯대', tool: 'rod', stack: 1, desc: '물을 보고 Space, 찌에 ❗가 뜨면 다시 Space!' },
-    bow: { name: '활', tool: 'bow', stack: 1, desc: 'Space로 화살 발사! (마우스 쪽 또는 바라보는 쪽) 야생 동물 사냥' },
+    bow: { name: '활', tool: 'bow', weapon: 'bow', atk: 3, stack: 1, desc: 'Space로 화살 발사! 누구나 쓸 수 있어요. 야생 동물·몬스터 사냥' },
     rod_gold: { name: '황금 낚싯대', tool: 'rod', gold: 1, stack: 1, questOnly: 1, desc: '입질이 빠르고 귀한 물고기가 잘 잡혀요' },
     can_gold: { name: '황금 물뿌리개', tool: 'can', gold: 1, stack: 1, questOnly: 1, desc: '한 번에 주변 3×3칸에 물을 줘요' },
 
@@ -302,7 +306,43 @@
     cake: { name: '케이크', obj: 'cake', cat: 'furniture', desc: '테이블 위에 올려요 🍰' },
     bread_basket: { name: '빵 바구니', obj: 'bread_basket', cat: 'furniture', desc: '테이블 위에 올려요 🥐' },
     floor_cafe: { name: '카페 바닥', ground: 'floor_cafe', cat: 'floor', desc: '흑백 체크 타일' },
+
+    // ── v7 무기 (weapon: sword 검 / bow 활 / staff 지팡이 / ninja 쿠나이·닌자도, cls: 그 직업만 사용) ──
+    wood_sword: { name: '목검', weapon: 'sword', atk: 4, stack: 1, desc: '누구나 쓸 수 있는 연습용 검. 앞의 적을 베어요' },
+    iron_sword: { name: '철검', weapon: 'sword', atk: 9, cls: 'knight', stack: 1, desc: '기사의 검' },
+    knight_sword: { name: '기사의 검', weapon: 'sword', atk: 16, cls: 'knight', stack: 1, desc: '빛나는 기사의 검' },
+    hero_sword: { name: '용사의 대검', weapon: 'sword', atk: 26, cls: 'knight', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
+    long_bow: { name: '장궁', weapon: 'bow', atk: 8, cls: 'archer', stack: 1, desc: '궁수의 활' },
+    elf_bow: { name: '엘프의 활', weapon: 'bow', atk: 15, cls: 'archer', stack: 1, desc: '가볍고 정확한 활' },
+    phoenix_bow: { name: '불사조 활', weapon: 'bow', atk: 24, cls: 'archer', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
+    staff_basic: { name: '견습 지팡이', weapon: 'staff', atk: 6, cls: 'mage', stack: 1, desc: '마법사의 지팡이. 터지면서 주변에도 피해' },
+    crystal_staff: { name: '수정 지팡이', weapon: 'staff', atk: 13, cls: 'mage', stack: 1, desc: '수정이 박힌 지팡이' },
+    arch_staff: { name: '대마법사의 지팡이', weapon: 'staff', atk: 22, cls: 'mage', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
+    kunai: { name: '쿠나이', weapon: 'ninja', atk: 6, cls: 'ninja', stack: 1, desc: '닌자의 쿠나이. 빠르고 치명타가 나와요' },
+    ninja_blade: { name: '닌자도', weapon: 'ninja', atk: 12, cls: 'ninja', stack: 1, desc: '날카로운 닌자도' },
+    shadow_blade: { name: '그림자 닌자도', weapon: 'ninja', atk: 20, cls: 'ninja', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
+    // 물약 (Space로 마시면 체력 회복)
+    potion_s: { name: '작은 물약', heal: 60, sell: 8, desc: '체력 60 회복' },
+    potion_m: { name: '중간 물약', heal: 180, sell: 25, desc: '체력 180 회복' },
+    potion_l: { name: '큰 물약', heal: 400, sell: 60, desc: '체력 400 회복' },
+    // 던전 재료
+    slime_gel: { name: '슬라임 젤리', sell: 6, desc: '1성 던전. 강화 재료' },
+    bone: { name: '뼈', sell: 12, desc: '2성 던전. 강화·무기 재료' },
+    ecto: { name: '유령 가루', sell: 18, desc: '2성 던전. 무기 재료' },
+    fire_core: { name: '불꽃 핵', sell: 40, desc: '3성 던전. 강화 재료' },
+    dragon_scale: { name: '용비늘', sell: 200, desc: '드래곤에게서만. 최고급 강화 재료' },
   };
+  // ── 갑옷 (마인크래프트처럼 투구·갑옷·바지·신발 × 가죽·철·금·수정) ──
+  const ARMOR_TIERS = {
+    leather: { name: '가죽', mat: 'hide', lv: 3, def: [1, 3, 2, 1], col: '#a8743f' },
+    iron: { name: '철', mat: 'iron', lv: 8, def: [2, 5, 4, 2], col: '#c4ced6' },
+    gold: { name: '금', mat: 'gold', lv: 14, def: [3, 6, 5, 3], col: '#f2c230' },
+    crystal: { name: '수정', mat: 'gem', lv: 20, def: [4, 8, 6, 4], col: '#7fdcff' },
+  };
+  const ARMOR_PARTS = [['helmet', '투구', 5], ['chest', '갑옷', 8], ['legs', '바지', 7], ['boots', '신발', 4]];
+  for (const [tier, t] of Object.entries(ARMOR_TIERS)) ARMOR_PARTS.forEach(([part, pname], i) => {
+    ITEMS[`${tier}_${part}`] = { name: `${t.name} ${pname}`, armor: { part, def: t.def[i], tier }, stack: 1, desc: `방어력 +${t.def[i]} (가방에서 장착)` };
+  });
   for (const id in ITEMS) {
     const it = ITEMS[id];
     if (!it.stack) it.stack = 99;
@@ -312,7 +352,7 @@
 
   // ───────── 바닥 / 블록 ─────────
   const GROUND = {
-    grass: {}, water: { solid: 1 }, farm: {}, forest: {}, cave: {},
+    grass: {}, water: { solid: 1 }, farm: {}, forest: {}, cave: {}, dungeon: {}, lava: { solid: 1 },
   };
   // solid: 못 지나가요 / fixed: 못 부숴요 / sit·lie: E로 앉기·눕기 / toggle: E로 켜고 끄기
   // cook: 요리 가능 / fx: E 누르면 뜨는 그림 / msg: E 누르면 뜨는 말 / light: 동굴에서 빛나는 반지름(칸)
@@ -367,6 +407,8 @@
     cafe_table: { solid: 1 }, cafe_chair: { solid: 0, sit: 1 }, bar_stool: { solid: 0, sit: 1 }, cafe_counter: { solid: 1 },
     cake_showcase: { solid: 1, msg: '어떤 케이크로 할까? 🍰' }, menu_board: { solid: 1, msg: '오늘의 추천: 딸기라떼 🍓' }, bread_shelf: { solid: 1 },
     coffee_cup: { solid: 0, fx: '☕' }, cake: { solid: 0, fx: '🍰' }, bread_basket: { solid: 0, fx: '🥐' },
+    dungeon_wall: { solid: 1, fixed: 1 }, dungeon_gate: { solid: 1, fixed: 1 }, dungeon_exit: { solid: 0, fixed: 1, anim: 1, light: 3 },
+    job_master: { solid: 1, fixed: 1 }, anvil: { solid: 1, fixed: 1 },
     crystal_lamp: { solid: 1, light: 5 }, scarecrow: { solid: 1 }, windmill: { solid: 1, anim: 1 }, deer_trophy: { solid: 1 },
     music_box: { solid: 1, fx: '🎶' },
   };
@@ -454,7 +496,14 @@
   const maxPets = (lv) => Math.min(10, 2 + Math.floor((lv || 1) / 5));
 
   // ───────── 지역 ─────────
-  const zoneAt = (x, y) => (y >= CY ? (x < BX ? 'cave' : 'forest') : y >= OH || x >= OW ? 'meadow' : 'town');
+  // 지역: dungeon(맨 위) / town(마을) / meadow(집 짓는 땅) / cave·forest(맨 아래 생산 구역)
+  const zoneAt = (x, y) => {
+    if (y < TY) return 'dungeon';
+    if (y >= CY) return x < TX ? 'forest' : x < BX ? 'cave' : 'forest';
+    if (x >= TX && x < TX + OW && y < TY + OH) return 'town';
+    return 'meadow';
+  };
+  const dungeonStar = (x) => (x < 48 ? 1 : x < 96 ? 2 : 3);  // 던전 지대에서 몇 성 던전인지
 
   // ───────── 낚시 (지역마다 다른 물고기) ─────────
   const FISH_TABLES = {
@@ -494,7 +543,8 @@
     ['cafe', '☕ 카페', [['floor_cafe', 5, 1], ['cafe_table', 70, 2], ['cafe_chair', 50, 2], ['coffee_cup', 20, 2], ['bar_stool', 60, 3], ['cafe_counter', 80, 3],
       ['cake', 40, 3], ['bread_basket', 40, 3], ['menu_board', 70, 4], ['bread_shelf', 150, 5], ['cake_showcase', 220, 6]]],
     ['animal', '🐶 동물·펫', [['animal_chicken', 80, 1], ['animal_sheep', 180, 3], ['animal_duck', 160, 4], ['animal_cow', 250, 5], ['animal_goat', 320, 8],
-      ['animal_pig', 450, 12], ['pet_dog', 400, 2], ['pet_cat', 450, 6], ['pet_cat_black', 550, 8], ['pet_bunny', 500, 9], ['pet_dog_white', 600, 10], ['bow', 120, 3]]],
+      ['animal_pig', 450, 12], ['pet_dog', 400, 2], ['pet_cat', 450, 6], ['pet_cat_black', 550, 8], ['pet_bunny', 500, 9], ['pet_dog_white', 600, 10]]],
+    ['adv', '⚔️ 모험', [['wood_sword', 60, 1], ['bow', 120, 1], ['potion_s', 30, 1], ['potion_m', 90, 8], ['potion_l', 220, 16]]],
   ];
   // 사는 가격 배수 (돈이 너무 잘 벌려서 2배로 올렸어요. 파는 가격은 그대로)
   const PRICE_MULT = 2;
@@ -542,7 +592,18 @@
     { out: 'stand_lamp', n: 1, need: { iron: 1, wood: 1 } },
     { out: 'chest', n: 1, need: { wood: 8 } },
     { out: 'chest_big', n: 1, need: { wood: 12, iron: 4 }, lv: 10 },
+    // 무기
+    { out: 'wood_sword', n: 1, need: { wood: 5 } },
+    { out: 'iron_sword', n: 1, need: { iron: 5, wood: 2 }, lv: 10 },
+    { out: 'long_bow', n: 1, need: { wood: 8, iron: 2 }, lv: 10 },
+    { out: 'staff_basic', n: 1, need: { wood: 4, gem: 1 }, lv: 10 },
+    { out: 'kunai', n: 1, need: { iron: 4 }, lv: 10 },
+    { out: 'knight_sword', n: 1, need: { iron: 8, gold: 3, bone: 5 }, lv: 15 },
+    { out: 'elf_bow', n: 1, need: { wood: 10, gem: 2, ecto: 3 }, lv: 15 },
+    { out: 'crystal_staff', n: 1, need: { gem: 4, gold: 2, ecto: 3 }, lv: 15 },
+    { out: 'ninja_blade', n: 1, need: { iron: 6, gold: 2, bone: 4 }, lv: 15 },
   ];
+  for (const [tier, t] of Object.entries(ARMOR_TIERS)) ARMOR_PARTS.forEach(([part, , n]) => RECIPES.push({ out: `${tier}_${part}`, n: 1, need: { [t.mat]: n }, lv: t.lv }));
 
   // ───────── 요리 (가스레인지·전자레인지·모닥불·벽난로 앞에서 E) ─────────
   // lv: 이 레벨부터 만들 수 있어요
@@ -722,6 +783,16 @@
     { id: 'q_chain10', name: '도전자', desc: '레벨 퀘스트 10개 깨기', stat: 'chainDone', goal: 10, reward: { coins: 300, exp: 200 } },
     { id: 'q_chain30', name: '끝없는 도전', desc: '레벨 퀘스트 30개 깨기', stat: 'chainDone', goal: 30, reward: { exp: 500, items: { teddy_big: 1 } } },
     { id: 'q_cafe', name: '카페 사장님', desc: '가구 20개 놓기', stat: 'furniturePlaced', goal: 20, reward: { coins: 300, exp: 100 } },
+    // v7 전투
+    { id: 'q_kill1', name: '첫 전투', desc: '던전 몬스터 1마리 처치 (Lv.5부터 1성 던전)', stat: 'kill', goal: 1, reward: { coins: 100, exp: 40, items: { potion_s: 3 } } },
+    { id: 'q_kill100', name: '몬스터 사냥꾼', desc: '던전 몬스터 100마리 처치', stat: 'kill', goal: 100, reward: { coins: 800, exp: 400 } },
+    { id: 'q_kill500', name: '전장의 영웅', desc: '던전 몬스터 500마리 처치', stat: 'kill', goal: 500, reward: { coins: 3000, exp: 1500 } },
+    { id: 'q_boss1', name: '킹슬라임 토벌', desc: '1성 던전 보스 처치에 참여', stat: 'boss1', goal: 1, reward: { coins: 300, exp: 200 } },
+    { id: 'q_boss2', name: '해골 기사 토벌', desc: '2성 던전 보스 처치에 참여', stat: 'boss2', goal: 1, reward: { coins: 800, exp: 600 } },
+    { id: 'q_boss3', name: '드래곤 토벌', desc: '3성 던전 보스 처치에 참여', stat: 'boss3', goal: 1, reward: { coins: 3000, exp: 2000 } },
+    { id: 'q_job', name: '새로운 길', desc: '전직하기 (Lv.10, 마을 전직 교관)', stat: 'jobChanged', goal: 1, reward: { coins: 500, exp: 200 } },
+    { id: 'q_en5', name: '대장장이 수습', desc: '무기 +5 강화 성공 (마을 대장간)', stat: 'enMax', goal: 5, reward: { coins: 500, exp: 300 } },
+    { id: 'q_armor', name: '완전 무장', desc: '갑옷 4부위 모두 장착하기', stat: 'armorParts', goal: 4, reward: { coins: 300, exp: 200 } },
   ];
 
   // ───────── 일간 / 주간 / 월간 퀘스트 ─────────
@@ -884,8 +955,8 @@
 
   // ───────── 처음 맵 만들기 ─────────
   // 마을(예전 맵 64×48)을 만든 뒤 expandWorld 로 숲과 동굴을 붙여요.
-  function generateWorld() {
-    const ground = Array.from({ length: H }, () => new Array(W).fill('grass'));
+  function generateLegacy() {
+    const ground = Array.from({ length: H0 }, () => new Array(W0).fill('grass'));
     const objects = {};
     const inb = (x, y) => x >= 0 && y >= 0 && x < OW && y < OH;
     const setG = (x, y, g) => { if (inb(x, y)) ground[y][x] = g; };
@@ -997,7 +1068,7 @@
   // 오른쪽 위: 집 짓는 땅 (keep = 예전 숲을 바꿀 때 사람이 놓은 물건은 남겨요)
   function genTopRight(ground, objects, keep) {
     const { setG, setO, getO } = worldTools(ground, objects);
-    for (let y = 0; y < OH; y++) for (let x = OW; x < W; x++) {
+    for (let y = 0; y < OH; y++) for (let x = OW; x < W0; x++) {
       const o = getO(x, y);
       if (!keep) { setG(x, y, 'grass'); setO(x, y, null); continue; }
       if (o && (NATURAL.has(o.t) || o.fixed)) setO(x, y, null);
@@ -1009,10 +1080,10 @@
         if (d < 1) setG(x, y, 'water'); else if (d < 1.45) setG(x, y, 'sand');
       }
     }
-    for (let y = 0; y < OH; y++) for (let x = OW; x < W; x++)
-      if ((y < 2 || x >= W - 2) && !getO(x, y)) setO(x, y, { t: 'tree', fixed: 1 });
-    for (let x = OW - 2; x < W - 2; x++) if (!getO(x, 24) && ground[24][x] === 'grass') setG(x, 24, 'path');
-    for (let y = 2; y < OH; y++) for (let x = OW; x < W - 2; x++) {
+    for (let y = 0; y < OH; y++) for (let x = OW; x < W0; x++)
+      if ((y < 2 || x >= W0 - 2) && !getO(x, y)) setO(x, y, { t: 'tree', fixed: 1 });
+    for (let x = OW - 2; x < W0 - 2; x++) if (!getO(x, 24) && ground[24][x] === 'grass') setG(x, 24, 'path');
+    for (let y = 2; y < OH; y++) for (let x = OW; x < W0 - 2; x++) {
       if (getO(x, y) || ground[y][x] !== 'grass' || Math.abs(y - 24) <= 1) continue;
       const r = hash(x * 13, y * 17);
       if (r < 0.012) setO(x, y, { t: 'tree' }); else if (r > 0.96) setO(x, y, { t: 'flower' });
@@ -1023,67 +1094,67 @@
   // 가운데: 집 짓는 들판 (처음 만들 때만)
   function genMeadow(ground, objects) {
     const { setG, setO } = worldTools(ground, objects);
-    for (let y = OH; y < CY; y++) for (let x = 0; x < W; x++) {
+    for (let y = OH; y < CY0; y++) for (let x = 0; x < W0; x++) {
       setG(x, y, 'grass'); setO(x, y, null);
-      if (x < 2 || x >= W - 2) { setO(x, y, { t: 'tree', fixed: 1 }); continue; }
+      if (x < 2 || x >= W0 - 2) { setO(x, y, { t: 'tree', fixed: 1 }); continue; }
       const r = hash(x * 7 + 5, y * 11 + 3);
       if (r < 0.008) setO(x, y, { t: 'tree' }); else if (r > 0.96) setO(x, y, { t: 'flower' });
     }
-    for (let y = OH + 2; y < CY - 2; y++) for (let x = 4; x < 24; x++) {
+    for (let y = OH + 2; y < CY0 - 2; y++) for (let x = 4; x < 24; x++) {
       const dx = (x + 0.5 - 12) / 4.5, dy = (y + 0.5 - 64) / 2.8, d = dx * dx + dy * dy;
       if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.45) { setG(x, y, 'sand'); setO(x, y, null); }
     }
-    for (let y = OH - 2; y < CY; y++) { setG(31, y, 'path'); setO(31, y, null); }
+    for (let y = OH - 2; y < CY0; y++) { setG(31, y, 'path'); setO(31, y, null); }
     setO(33, OH + 1, { t: 'sign', text: '🏡 마음껏 집을 지어요!' });
     for (let y = OH - 2; y < OH; y++) for (let x = 20; x <= 42; x++) { setO(x, y, null); setG(x, y, x === 31 ? 'path' : 'grass'); }
   }
   // 맨 아래: 생산 구역 (왼쪽 동굴, 오른쪽 나무꾼의 숲). 다시 자라니까 너무 크지 않게.
   function genBottom(ground, objects) {
     const { setG, setO, getO } = worldTools(ground, objects);
-    for (let y = CY; y < H; y++) for (let x = 0; x < W; x++) {
-      if (x < BX) { setG(x, y, 'cave'); setO(x, y, { t: 'cave_wall', fixed: 1 }); } else { setG(x, y, 'forest'); setO(x, y, null); }
+    for (let y = CY0; y < H0; y++) for (let x = 0; x < W0; x++) {
+      if (x < BX0) { setG(x, y, 'cave'); setO(x, y, { t: 'cave_wall', fixed: 1 }); } else { setG(x, y, 'forest'); setO(x, y, null); }
     }
     // ── 동굴 (x 0~49)
-    const corridorY = CY + 16;
+    const corridorY = CY0 + 16;
     const open = (x, y) => {
-      if (x < 4 || x >= BX - 4 || y < CY + 4 || y >= H - 3) return false;
+      if (x < 4 || x >= BX0 - 4 || y < CY0 + 4 || y >= H0 - 3) return false;
       if (Math.abs(y - corridorY) <= 1 || Math.abs(x - 31) <= 1) return true;
       return hash(Math.floor(x / 3) * 7 + 3, Math.floor(y / 3) * 13 + 1) > 0.2;
     };
-    for (let y = CY; y < H; y++) for (let x = 0; x < BX; x++) if (open(x, y)) setO(x, y, null);
-    for (let y = CY - 2; y < CY + 5; y++) for (let x = 29; x <= 33; x++) { setO(x, y, null); if (y < CY) setG(x, y, 'path'); }
-    for (let y = CY + 4; y < H - 3; y++) for (let x = 30; x < BX - 3; x++) {
-      const dx = (x + 0.5 - 39) / 4.5, dy = (y + 0.5 - (CY + 24)) / 2.5, d = dx * dx + dy * dy;
+    for (let y = CY0; y < H0; y++) for (let x = 0; x < BX0; x++) if (open(x, y)) setO(x, y, null);
+    for (let y = CY0 - 2; y < CY0 + 5; y++) for (let x = 29; x <= 33; x++) { setO(x, y, null); if (y < CY0) setG(x, y, 'path'); }
+    for (let y = CY0 + 4; y < H0 - 3; y++) for (let x = 30; x < BX0 - 3; x++) {
+      const dx = (x + 0.5 - 39) / 4.5, dy = (y + 0.5 - (CY0 + 24)) / 2.5, d = dx * dx + dy * dy;
       if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.6 && getO(x, y) && getO(x, y).t === 'cave_wall') setO(x, y, null);
     }
-    for (let y = CY + 4; y < H - 3; y++) for (let x = 4; x < BX - 4; x++) {
+    for (let y = CY0 + 4; y < H0 - 3; y++) for (let x = 4; x < BX0 - 4; x++) {
       if (getO(x, y) || ground[y][x] !== 'cave') continue;
       if (Math.abs(y - corridorY) <= 1 || (Math.abs(x - 31) <= 1 && y < corridorY)) continue;
-      const depth = (y - CY) / (H - CY);
+      const depth = (y - CY0) / (H0 - CY0);
       const r = hash(x * 5 + 11, y * 9 + 7);
       if (r < 0.09) setO(x, y, { t: 'rock' });
       else if (r < 0.15) setO(x, y, { t: 'ore_iron' });
       else if (r < 0.16 + 0.03 * depth) setO(x, y, { t: 'ore_gold' });
       else if (r < 0.19 + 0.02 * depth) setO(x, y, depth > 0.4 ? { t: 'crystal' } : { t: 'rock' });
     }
-    for (let x = 6; x < BX - 5; x += 7) if (!getO(x, corridorY - 1)) setO(x, corridorY - 1, { t: 'torch', fixed: 1 });
-    for (let y = CY + 2; y < corridorY; y += 5) setO(29, y, { t: 'torch', fixed: 1 });
-    setO(33, CY + 1, { t: 'sign', text: '⛏ 동굴 (바위·광석 X로 캐요)' });
+    for (let x = 6; x < BX0 - 5; x += 7) if (!getO(x, corridorY - 1)) setO(x, corridorY - 1, { t: 'torch', fixed: 1 });
+    for (let y = CY0 + 2; y < corridorY; y += 5) setO(29, y, { t: 'torch', fixed: 1 });
+    setO(33, CY0 + 1, { t: 'sign', text: '⛏ 동굴 (바위·광석 X로 캐요)' });
     // 동굴 ↔ 숲 굴
-    for (let y = corridorY - 1; y <= corridorY + 1; y++) for (let x = BX - 5; x < BX + 2; x++) { setO(x, y, null); if (x < BX) setG(x, y, 'cave'); }
+    for (let y = corridorY - 1; y <= corridorY + 1; y++) for (let x = BX0 - 5; x < BX0 + 2; x++) { setO(x, y, null); if (x < BX0) setG(x, y, 'cave'); }
     // ── 나무꾼의 숲 (x 50~99)
     const EX = 75;
-    for (let y = CY; y < H; y++) for (let x = BX; x < W; x++) {
-      if (x >= W - 2 || y >= H - 2 || (y < CY + 2 && Math.abs(x - EX) > 2)) setO(x, y, { t: 'pine', fixed: 1 });
+    for (let y = CY0; y < H0; y++) for (let x = BX0; x < W0; x++) {
+      if (x >= W0 - 2 || y >= H0 - 2 || (y < CY0 + 2 && Math.abs(x - EX) > 2)) setO(x, y, { t: 'pine', fixed: 1 });
     }
-    for (let y = CY + 4; y < CY + 17; y++) for (let x = 82; x < 96; x++) {
-      const dx = (x + 0.5 - 89) / 4.5, dy = (y + 0.5 - (CY + 10)) / 3, d = dx * dx + dy * dy;
+    for (let y = CY0 + 4; y < CY0 + 17; y++) for (let x = 82; x < 96; x++) {
+      const dx = (x + 0.5 - 89) / 4.5, dy = (y + 0.5 - (CY0 + 10)) / 3, d = dx * dx + dy * dy;
       if (d < 1) setG(x, y, 'water'); else if (d < 1.5) setG(x, y, 'sand');
     }
-    const camp = { x: 66, y: CY + 18 };
-    for (let y = CY - 8; y <= camp.y; y++) if (!getO(EX, y) || y >= CY) { setG(EX, y, 'path'); if (y >= CY) setO(EX, y, null); }
+    const camp = { x: 66, y: CY0 + 18 };
+    for (let y = CY0 - 8; y <= camp.y; y++) if (!getO(EX, y) || y >= CY0) { setG(EX, y, 'path'); if (y >= CY0) setO(EX, y, null); }
     for (let x = camp.x; x <= EX; x++) setG(x, camp.y, 'path');
-    for (let y = CY + 2; y < H - 2; y++) for (let x = BX; x < W - 2; x++) {
+    for (let y = CY0 + 2; y < H0 - 2; y++) for (let x = BX0; x < W0 - 2; x++) {
       const g = ground[y][x];
       if (g === 'path' || g === 'sand' || g === 'water' || getO(x, y)) continue;
       if (Math.hypot(x - camp.x, y - camp.y) < 4.2) continue;
@@ -1101,9 +1172,9 @@
     setO(camp.x - 2, camp.y, { t: 'log_seat', fixed: 1 }); setO(camp.x + 2, camp.y, { t: 'log_seat', fixed: 1 });
     setO(camp.x, camp.y + 2, { t: 'log_seat', fixed: 1 });
     setO(camp.x + 1, camp.y - 2, { t: 'sign', text: '🔥 모닥불 (E로 요리)' });
-    setO(EX + 2, CY + 2, { t: 'sign', text: '🌲 나무꾼의 숲 (나무 X, 버섯·산딸기 E)' });
-    if (!getO(EX + 2, CY - 3)) setO(EX + 2, CY - 3, { t: 'sign', text: '🌲 아래로 가면 나무꾼의 숲' });
-    if (!getO(33, CY - 3)) setO(33, CY - 3, { t: 'sign', text: '⛏ 아래로 가면 동굴' });
+    setO(EX + 2, CY0 + 2, { t: 'sign', text: '🌲 나무꾼의 숲 (나무 X, 버섯·산딸기 E)' });
+    if (!getO(EX + 2, CY0 - 3)) setO(EX + 2, CY0 - 3, { t: 'sign', text: '🌲 아래로 가면 나무꾼의 숲' });
+    if (!getO(33, CY0 - 3)) setO(33, CY0 - 3, { t: 'sign', text: '⛏ 아래로 가면 동굴' });
   }
   // 마을 한가운데 게시판 (빈 칸을 찾아서)
   function placeBoard(ground, objects) {
@@ -1140,9 +1211,211 @@
     }
   }
 
+  // ───────── ⚔️ 전투: 직업 · 무기 · 체력 · 몬스터 · 강화 · 칭호 ─────────
+  const JOB_LV = 10, JOB_RESET_COST = 5000;
+  const JOBS = {
+    novice: { name: '모험가', icon: '🧭', desc: '처음엔 누구나 모험가! 목검과 활을 쓸 수 있어요. Lv.10부터 전직해요.' },
+    knight: { name: '기사', icon: '🛡️', weapon: 'sword', hp: 40, def: 2, desc: '검으로 앞의 적들을 한꺼번에 베어요. 체력 +40, 방어력 +2',
+      quest: [{ stat: 'kill', n: 15, t: '던전 몬스터 15마리 처치' }, { stat: 'iron', n: 10, t: '철광석 10개 캐기' }], reward: { iron_sword: 1 } },
+    archer: { name: '궁수', icon: '🏹', weapon: 'bow', speed: 0.75, desc: '멀리서 화살을 쏴요. 공격 속도 +25%, 사거리가 길어요',
+      quest: [{ stat: 'bowHit', n: 30, t: '활로 30번 맞히기 (동물·몬스터)' }, { stat: 'wood', n: 40, t: '나무 40개 모으기' }], reward: { long_bow: 1 } },
+    mage: { name: '마법사', icon: '🔮', weapon: 'staff', desc: '마법 구슬이 터지면서 주변 적들에게도 피해를 줘요',
+      quest: [{ stat: 'kill', n: 15, t: '던전 몬스터 15마리 처치' }, { stat: 'gem', n: 2, t: '수정 2개 캐기' }], reward: { staff_basic: 1 } },
+    ninja: { name: '닌자', icon: '🥷', weapon: 'ninja', crit: 0.3, desc: '아주 빠른 쿠나이·닌자도 공격. 치명타 30% (피해 2배)',
+      quest: [{ stat: 'hunt', n: 5, t: '야생 동물 5마리 사냥' }, { stat: 'kill', n: 20, t: '던전 몬스터 20마리 처치' }], reward: { kunai: 1 } },
+  };
+  // 무기 종류: cd 공격 간격(ms), range 사거리(px)
+  const WEAPONS = { sword: { name: '검', cd: 520, range: 26 }, bow: { name: '활', cd: 560, range: 7 * TILE }, staff: { name: '지팡이', cd: 850, range: 6 * TILE, splash: 24 }, ninja: { name: '닌자 무기', cd: 300, range: 22 } };
+  const maxHp = (lv, job) => 100 + 8 * ((lv || 1) - 1) + ((JOBS[job] || {}).hp || 0);
+  function armorDef(equip, job) {
+    let d = (JOBS[job] || {}).def || 0;
+    for (const it of Object.values(equip || {})) if (it && ITEMS[it.id] && ITEMS[it.id].armor) d += ITEMS[it.id].armor.def;
+    return d;
+  }
+  // 받는 피해: 방어력 1마다 3%씩 줄어요 (최대 70%)
+  const dmgTaken = (atk, def) => Math.max(1, Math.round(atk * (1 - Math.min(0.7, def * 0.03))));
+  // 무기 공격력: 강화 1단계마다 +12% +1
+  const weaponAtk = (it) => { const d = ITEMS[it.id]; const en = it.en || 0; return Math.round((d.atk || 1) * (1 + 0.12 * en) + en); };
+  const itemLabel = (it) => (it && it.en ? `+${it.en} ` : '') + (it && ITEMS[it.id] ? ITEMS[it.id].name : '');
+  // 강화: [현재 단계] → 다음 단계 (실패해도 부서지지 않아요)
+  const MAX_EN = 10;
+  const ENHANCE = [
+    { rate: 1, coins: 100, need: { slime_gel: 2 } }, { rate: 0.9, coins: 150, need: { slime_gel: 3 } }, { rate: 0.8, coins: 200, need: { slime_gel: 4 } },
+    { rate: 0.7, coins: 300, need: { bone: 3, iron: 2 } }, { rate: 0.6, coins: 400, need: { bone: 4, iron: 3 } }, { rate: 0.5, coins: 500, need: { bone: 5, iron: 4 } },
+    { rate: 0.4, coins: 800, need: { fire_core: 2, gold: 2 } }, { rate: 0.3, coins: 1000, need: { fire_core: 3, gold: 3 } }, { rate: 0.2, coins: 1300, need: { fire_core: 4, gold: 4 } },
+    { rate: 0.12, coins: 2000, need: { dragon_scale: 1, gem: 2 } },
+  ];
+  // 몬스터 (던전 안에만): n 마릿수, drops [아이템, 확률, 개수]
+  // 보스: 가장 많이 때린 1~3등에게만 보상 (1등 100% · 2등 60% · 3등 35%), rare = 등수별 확률로 주는 무기
+  const MOBS = {
+    slime: { name: '슬라임', star: 1, hp: 24, atk: 5, def: 0, speed: 18, exp: 8, coins: [3, 8], drops: [['slime_gel', 0.6, 1]], n: 10 },
+    bat: { name: '박쥐', star: 1, hp: 16, atk: 4, def: 0, speed: 32, exp: 7, coins: [2, 6], drops: [['slime_gel', 0.3, 1]], n: 6 },
+    king_slime: { name: '킹슬라임', star: 1, boss: 1, hp: 450, atk: 12, def: 2, speed: 14, exp: 150, coins: [150, 200], loot: { slime_gel: 6, gold: 2, potion_m: 2 } },
+    skeleton: { name: '해골 병사', star: 2, hp: 80, atk: 13, def: 3, speed: 20, exp: 22, coins: [8, 15], drops: [['bone', 0.7, 1], ['iron', 0.25, 1]], n: 9 },
+    ghost: { name: '유령', star: 2, hp: 60, atk: 15, def: 1, speed: 26, exp: 25, coins: [8, 15], drops: [['ecto', 0.6, 1]], n: 6 },
+    skeleton_knight: { name: '해골 기사', star: 2, boss: 1, hp: 1600, atk: 26, def: 6, speed: 18, exp: 600, coins: [500, 600], loot: { bone: 8, gold: 4, gem: 1 },
+      rare: ['knight_sword', 'elf_bow', 'crystal_staff', 'ninja_blade'] },
+    golem: { name: '돌 골렘', star: 3, hp: 220, atk: 24, def: 9, speed: 13, exp: 55, coins: [15, 30], drops: [['gem', 0.25, 1], ['gold', 0.4, 1]], n: 8 },
+    imp: { name: '불꽃 임프', star: 3, hp: 120, atk: 28, def: 3, speed: 30, exp: 50, coins: [15, 30], drops: [['fire_core', 0.45, 1]], n: 7 },
+    dragon: { name: '드래곤', star: 3, boss: 1, hp: 5200, atk: 48, def: 12, speed: 16, exp: 2500, coins: [1500, 2000], loot: { fire_core: 6, dragon_scale: 2, gem: 3 },
+      rare: ['hero_sword', 'phoenix_bow', 'arch_staff', 'shadow_blade'] },
+  };
+  const BOSS_SHARE = [1, 0.6, 0.35];                 // 보스 보상 등수별 비율
+  const BOSS_RARE = { 2: [0.3, 0.15, 0.05], 3: [0.5, 0.25, 0.1] };  // 등수별 무기 확률
+  const MOB_RESPAWN = 25000, BOSS_RESPAWN = 300000;
+  // 칭호: stat 이 n 이상이면 / job 이면 얻어요
+  const TITLES = [
+    { id: 'newbie', name: '새싹 모험가', desc: '처음부터 가지고 있어요' },
+    { id: 'fisher', name: '낚시꾼', stat: 'fish', n: 15, desc: '물고기 15마리' },
+    { id: 'farmer', name: '농부', stat: 'harvest', n: 30, desc: '작물 30개 수확' },
+    { id: 'chef', name: '요리사', stat: 'cook', n: 15, desc: '요리 15번' },
+    { id: 'miner', name: '광부', stat: 'iron', n: 15, desc: '철광석 15개' },
+    { id: 'hunter', name: '사냥꾼', stat: 'hunt', n: 15, desc: '야생 동물 15마리' },
+    { id: 'rich', name: '큰손', stat: 'earned', n: 5000, desc: '판매 수익 5000' },
+    { id: 'builder', name: '건축가', stat: 'wallPlaced', n: 100, desc: '벽 100개' },
+    { id: 'decorator', name: '인테리어 장인', stat: 'furniturePlaced', n: 50, desc: '가구 50개' },
+    { id: 'collector', name: '수집가', stat: 'col', n: 30, desc: '도감 30칸' },
+    { id: 'social', name: '인싸', stat: 'chat', n: 100, desc: '채팅 100번' },
+    { id: 'slime_hunter', name: '슬라임 사냥꾼', stat: 'kill_slime', n: 50, desc: '슬라임 50마리' },
+    { id: 'monster_hunter', name: '몬스터 헌터', stat: 'kill', n: 300, desc: '몬스터 300마리' },
+    { id: 'boss1', name: '킹슬라임 퇴치자', stat: 'boss1', n: 1, desc: '1성 보스 처치 참여' },
+    { id: 'boss2', name: '해골 기사 퇴치자', stat: 'boss2', n: 1, desc: '2성 보스 처치 참여' },
+    { id: 'boss3', name: '용 사냥꾼', stat: 'boss3', n: 1, desc: '3성 보스 처치 참여' },
+    { id: 'boss_ace', name: '보스 킬러', stat: 'bossTop1', n: 5, desc: '보스 딜량 1등 5번' },
+    { id: 'smith', name: '강화의 달인', stat: 'enMax', n: 7, desc: '+7 강화 성공' },
+    { id: 'smith10', name: '강화의 신', stat: 'enMax', n: 10, desc: '+10 강화 성공' },
+    { id: 'knight', name: '기사', job: 'knight', desc: '기사로 전직' },
+    { id: 'archer', name: '궁수', job: 'archer', desc: '궁수로 전직' },
+    { id: 'mage', name: '마법사', job: 'mage', desc: '마법사로 전직' },
+    { id: 'ninja', name: '닌자', job: 'ninja', desc: '닌자로 전직' },
+    { id: 'mvp', name: '금주의 MVP', stat: 'mvpWin', n: 1, desc: '금주의 MVP 1등' },
+    { id: 'legend', name: '전설', stat: 'level', n: 20, desc: '레벨 20' },
+  ];
+  const titleOk = (pr, t) => (t.job ? pr.job === t.job || (pr.jobsDone || []).includes(t.job) : !t.stat || ((pr.stats || {})[t.stat] || 0) >= t.n);
+
+  // ───────── v7 지도: 예전 지도를 오른쪽·아래로 옮기고, 위에 던전 지대 · 왼쪽에 새 땅 ─────────
+  const DUNGEONS = [
+    { star: 1, x0: 4, x1: 43, lv: 5, name: '⭐ 1성 던전 · 슬라임 동굴' },
+    { star: 2, x0: 52, x1: 91, lv: 12, name: '⭐⭐ 2성 던전 · 해골 묘지' },
+    { star: 3, x0: 100, x1: 139, lv: 20, name: '⭐⭐⭐ 3성 던전 · 용암 성채' },
+  ];
+  const DY0 = 2, DY1 = 31;                       // 던전 건물 위·아래 벽 줄
+  DUNGEONS.forEach((d) => { d.cx = Math.floor((d.x0 + d.x1) / 2); d.gate = { x: d.cx, y: DY1 }; d.inside = { x: d.cx, y: DY1 - 3 }; d.outside = { x: d.cx, y: DY1 + 2 }; d.boss = { x: d.cx, y: DY0 + 4 }; });
+  function toV7(ground0, objects0) {
+    const ground = Array.from({ length: H }, () => new Array(W).fill('grass'));
+    const objects = {};
+    for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) ground[y + TY][x + TX] = ground0[y][x];
+    for (const [k, o] of Object.entries(objects0)) { const [x, y] = k.split(',').map(Number); objects[(x + TX) + ',' + (y + TY)] = o; }
+    genLeftStrip(ground, objects);
+    genDungeonBand(ground, objects);
+    cleanTrees(objects);
+    placeNPCs(ground, objects);
+    return { ground, objects };
+  }
+  function generateWorld() {
+    const g = generateLegacy();
+    const v = toV7(g.ground, g.objects);
+    const animals = g.animals.map((a) => Object.assign({}, a, { x: a.x + TX * TILE, y: a.y + TY * TILE }));
+    return { ground: v.ground, objects: v.objects, animals };
+  }
+  // 왼쪽 새 땅: 위쪽은 집 짓는 들판, 맨 아래는 숲 (생산 구역)
+  function genLeftStrip(ground, objects) {
+    const { setG, setO } = worldTools(ground, objects);
+    for (let y = TY; y < H; y++) for (let x = 0; x < TX; x++) {
+      setO(x, y, null);
+      if (y < CY) {
+        setG(x, y, 'grass');
+        if (hash(x * 3 + 7, y * 5 + 1) > 0.965) setO(x, y, { t: 'flower' });
+        continue;
+      }
+      setG(x, y, 'forest');
+      if (x < 2 || y >= H - 2 || (y < CY + 2 && Math.abs(x - 22) > 2)) { setO(x, y, { t: 'pine', fixed: 1 }); continue; }
+      if (Math.abs(x - 22) <= 1 && y < CY + 12) continue;
+      const r = hash(x * 13 + 5, y * 17 + 3);
+      if (r < 0.2) setO(x, y, { t: 'tree' });
+      else if (r < 0.34) setO(x, y, { t: 'pine' });
+      else if (r < 0.375) setO(x, y, { t: 'mushroom_wild' });
+      else if (r < 0.4) setO(x, y, { t: 'bush_berry' });
+      else if (r > 0.95) setO(x, y, { t: 'flower' });
+    }
+    for (let y = TY + 26; y < TY + 36; y++) for (let x = 12; x < 32; x++) {
+      const dx = (x + 0.5 - 22) / 6, dy = (y + 0.5 - (TY + 31)) / 3, d = dx * dx + dy * dy;
+      if (d < 1) setG(x, y, 'water'); else if (d < 1.45) setG(x, y, 'sand');
+    }
+    for (let y = CY - 6; y < CY + 12; y++) setG(22, y, 'path');
+    setO(24, CY - 3, { t: 'sign', text: '🌲 아래로 가면 숲' });
+  }
+  // 맨 위: 던전 지대 (1성·2성·3성 던전 건물 + 앞마당)
+  function genDungeonBand(ground, objects) {
+    const { setG, setO } = worldTools(ground, objects);
+    for (let y = 0; y < TY; y++) for (let x = 0; x < W; x++) {
+      setO(x, y, null);
+      setG(x, y, 'grass');
+      if (y > DY1 + 1 && hash(x * 7 + 1, y * 3 + 9) > 0.97) setO(x, y, { t: 'flower' });
+    }
+    for (const d of DUNGEONS) {
+      for (let y = DY0; y <= DY1; y++) for (let x = d.x0; x <= d.x1; x++) {
+        setG(x, y, 'dungeon');
+        const edge = x === d.x0 || x === d.x1 || y === DY0 || y === DY1;
+        if (edge) { setO(x, y, { t: 'dungeon_wall', fixed: 1 }); continue; }
+        const open = Math.abs(x - d.cx) <= 1 || Math.abs(y - 17) <= 1 || y <= DY0 + 7 || y >= DY1 - 4;
+        if (!open && hash(Math.floor(x / 3) * 11 + d.star, Math.floor(y / 3) * 7 + 5) < 0.16) setO(x, y, { t: 'dungeon_wall', fixed: 1 });
+        else if (d.star === 3 && !open && hash(x * 5, y * 9 + 3) < 0.06) setG(x, y, 'lava');
+      }
+      // 보스 방 칸막이
+      for (let x = d.x0 + 1; x < d.x1; x++) if (Math.abs(x - d.cx) > 2) setO(x, DY0 + 8, { t: 'dungeon_wall', fixed: 1 });
+      for (let x = d.x0 + 3; x < d.x1 - 1; x += 6) { setO(x, DY0 + 1, { t: 'torch', fixed: 1 }); setO(x, DY1 - 1, { t: 'torch', fixed: 1 }); setO(x, DY0 + 9, { t: 'torch', fixed: 1 }); }
+      setO(d.gate.x, d.gate.y, { t: 'dungeon_gate', star: d.star, fixed: 1 });
+      setO(d.cx, d.inside.y + 1, { t: 'dungeon_exit', star: d.star, fixed: 1 });
+      setO(d.cx + 2, DY1 + 2, { t: 'sign', text: `${d.name} (Lv.${d.lv}부터 · 문 앞에서 E)` });
+    }
+    for (let x = 4; x < W - 4; x++) setG(x, DY1 + 4, 'path');
+    for (const d of DUNGEONS) for (let y = DY1 + 1; y <= DY1 + 4; y++) setG(d.cx, y, 'path');
+    for (let y = DY1 + 4; y < TY + 6; y++) if (!objects[(TX + 31) + ',' + y]) setG(TX + 31, y, 'path');
+    setO(TX + 33, TY - 2, { t: 'sign', text: '⚔️ 위로 가면 던전 지대' });
+  }
+  // 숲이 아닌 곳의 나무는 없애요 (나무는 숲에만)
+  function cleanTrees(objects) {
+    for (const [k, o] of Object.entries(objects)) {
+      if (!o || !['tree', 'pine', 'stump'].includes(o.t)) continue;
+      const [x, y] = k.split(',').map(Number);
+      if (zoneAt(x, y) !== 'forest') delete objects[k];
+    }
+  }
+  // 마을 상점 근처에 전직 교관 · 대장간(모루)
+  function placeNPCs(ground, objects) {
+    const near = (t, cx, cy) => {
+      if (Object.values(objects).some((o) => o.t === t)) return;
+      for (let r = 0; r <= 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const x = cx + dx, y = cy + dy;
+        if (objects[x + ',' + y] || ground[y][x] === 'water' || ground[y][x] === 'path') continue;
+        objects[x + ',' + y] = { t, fixed: 1 };
+        return;
+      }
+    };
+    near('job_master', TX + 24, TY + 27);
+    near('anvil', TX + 38, TY + 27);
+  }
+
   // ───────── 📢 업데이트 소식 (마을 게시판에 자동으로 공지돼요) ─────────
   // 새 업데이트를 할 때 맨 앞에 하나 추가하면, 서버가 켜질 때 채팅으로 알리고 게시판 버튼에 🆕 가 떠요.
   const UPDATES = [
+    {
+      v: 'v7', date: '2026-11-13', title: '던전 · 전직 · 장비 · 강화 · 칭호 대규모 업데이트',
+      items: [
+        '🗺️ 지도가 넓어졌어요! 상점이 가로 한가운데에 오도록 왼쪽으로 넓히고, 위쪽은 전부 던전 지대예요 (지은 집은 그대로 옮겼어요)',
+        '⚔️ 던전 3곳: ⭐1성 슬라임 동굴(Lv.5) · ⭐⭐2성 해골 묘지(Lv.12) · ⭐⭐⭐3성 용암 성채(Lv.20). 문 앞에서 E로 입장',
+        '👑 보스(킹슬라임·해골 기사·드래곤)는 가장 많이 때린 1~3등만 보상! 처치하면 채팅에 딜량 순위와 입힌 피해를 알려줘요',
+        '❤️ 체력이 생겼어요. 쓰러지면 마을에서 다시 시작(잃는 건 없어요). 물약·요리로 회복',
+        '🧭 Lv.10부터 마을 전직 교관에게서 전직 퀘스트: 🛡️ 기사(검) · 🏹 궁수(활) · 🔮 마법사(지팡이) · 🥷 닌자(쿠나이·닌자도)',
+        '🗡️ 직업마다 무기 3단계 (만들기 2단계 + 3성 보스 전설 무기)',
+        '🔨 마을 대장간(모루)에서 무기 강화 +1 ~ +10 (실패해도 안 부서져요)',
+        '🛡️ 마인크래프트처럼 갑옷 4부위 × 가죽·철·금·수정! 장착하면 캐릭터에도 보여요',
+        '🏷️ 칭호: 업적·직업·보스 처치로 얻고 이름 위에 달아요 (Lv 버튼 → 칭호)',
+        '🌲 나무는 숲에만! 숲 밖의 나무는 다시 자라지 않고 2번 베면 사라져요',
+      ],
+    },
     {
       v: 'v6', date: '2026-11-12', title: '모바일 · 공원/카페 · 레벨 퀘스트 업데이트',
       items: [
@@ -1184,6 +1457,8 @@
     UPDATES,
     TILE, OW, OH, W, H, CY, BX, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
     hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, maxPets, zoneAt,
+    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
+    MAX_EN, ENHANCE, MOBS, BOSS_SHARE, BOSS_RARE, MOB_RESPAWN, BOSS_RESPAWN, TITLES, titleOk,
     expToNext, levelInfo, EXP, invSize, levelUnlocks, shopLv, MVP_CATS, MVP_STAT, MVP_PRIZE, NATURAL, upgradeV4, removeTownBorder,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,

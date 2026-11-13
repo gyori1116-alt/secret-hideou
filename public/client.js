@@ -63,7 +63,8 @@
   const isSolidAt = (px, py) => {
     const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
     if (tx < 0 || ty < 0 || tx >= W || ty >= H) return true;
-    return world.g(tx, ty) === 'water' || S.isSolidObj(world.o(tx, ty));
+    const gd = S.GROUND[world.g(tx, ty)];
+    return !!(gd && gd.solid) || S.isSolidObj(world.o(tx, ty));
   };
   const blocked = (x, y) => isSolidAt(x - 4, y - 3) || isSolidAt(x + 4, y - 3) || isSolidAt(x - 4, y) || isSolidAt(x + 4, y);
 
@@ -89,6 +90,9 @@
       if (o.t === 'board') return '#ffb36b';
       if (o.t === 'crop') return '#7ed492';
       if (o.t === 'campfire' || o.t === 'torch') return '#ff9a2e';
+      if (o.t === 'dungeon_wall') return '#1d1a22';
+      if (o.t === 'dungeon_gate' || o.t === 'dungeon_exit') return '#ffd34d';
+      if (o.t === 'anvil' || o.t === 'job_master') return '#9b8cff';
       if (S.WALLS[o.t] || (S.OBJ[o.t] && S.OBJ[o.t].wall)) return S.WALLS[o.t] ? S.WALLS[o.t][2] : '#8b5a3c';
       if (o.t === 'flower' || o.t === 'sprout' || o.t === 'stump' || o.t === 'sapling') return MM_GROUND[g] || '#8fd16f';
       if (o.t === 'fence') return '#c99558';
@@ -175,6 +179,18 @@
   const players = {};
   const animals = {};         // id -> { kind, x, y, dx, dy, dir, moving, flags, owner, pname, follow }
   const arrows = [], fxs = [];
+  const mobs = {};            // ⚔️ 몬스터 id -> { kind, x, y, dx, dy, dir, moving, hp(%), hurt }
+  const dmgs = [], slashes = [];
+  function syncMobs(list) {
+    const seen = new Set();
+    for (const [id, kind, x, y, left, moving, hp, hurt] of list) {
+      seen.add(id);
+      const m = mobs[id];
+      if (!m || Math.hypot(m.dx - x, m.dy - y) > TILE * 6) mobs[id] = { kind, x, y, dx: x, dy: y, dir: left ? 'left' : 'right', moving: !!moving, hp, hurt };
+      else Object.assign(m, { x, y, dir: left ? 'left' : 'right', moving: !!moving, hp, hurt });
+    }
+    for (const id in mobs) if (!seen.has(id)) delete mobs[id];
+  }
   const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   const me = { x: 0, y: 0, dir: 'down', moving: false, pose: null };
   resize();
@@ -255,7 +271,7 @@
   function addPlayer(p) {
     players[p.id] = Object.assign(players[p.id] || {}, {
       name: p.name, x: p.x, y: p.y, dx: p.x, dy: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, fishing: p.fishing, held: p.held, pose: p.pose,
-      lv: p.lv || 1, mvp: !!p.mvp,
+      lv: p.lv || 1, mvp: !!p.mvp, job: p.job, title: p.title, eq: p.eq || {}, hp: p.hp, maxHp: p.maxHp,
     });
     updateWho();
   }
@@ -327,6 +343,8 @@
     Object.values(d.players).forEach(addPlayer);
     for (const id in animals) delete animals[id];
     syncAnimals(d.animals || []);
+    for (const id in mobs) delete mobs[id];
+    syncMobs(d.mobs || []);
     me.x = players[myId].x; me.y = players[myId].y; me.pose = null;
     fishing = null;
     if (first) {
@@ -347,13 +365,14 @@
     $('coins').textContent = `💰 ${d.coins}`;
     const li = S.levelInfo(d.exp);
     myLv = li.lv;
+    if (d.maxHp) { myHp = d.hp; myMaxHp = d.maxHp; myDef = d.def || 0; showHp(); }
     $('lvText').textContent = `Lv.${li.lv}`;
     $('lvBar').style.width = `${Math.floor((li.cur / li.need) * 100)}%`;
     $('lvBox').title = `경험치 ${li.cur} / ${li.need} (누르면 레벨 보상 보기)`;
     if (players[myId]) { players[myId].avatar = d.avatar; players[myId].lv = li.lv; }
     renderHotbar();
     updateQuestBadge();
-    if (['bag', 'shop', 'quests', 'cook', 'col', 'trade', 'chest', 'level'].includes(modal)) renderModal();
+    if (['bag', 'shop', 'quests', 'cook', 'col', 'trade', 'chest', 'level', 'enhance', 'job'].includes(modal)) renderModal();
   });
   socket.on('levelUp', ({ lv, unlocks }) => showReward({ title: `⬆️ 레벨 업! Lv.${lv}`, unlocks }));
   // 게시판
@@ -363,12 +382,15 @@
   socket.on('tiles', (list) => { if (world.ground) list.forEach(applyTile); });
   socket.on('playerJoined', addPlayer);
   socket.on('playerLeft', (id) => { delete players[id]; updateWho(); });
-  socket.on('playerUpdate', ({ id, avatar, lv, mvp }) => {
+  socket.on('playerUpdate', ({ id, avatar, lv, mvp, job, title, eq }) => {
     const p = players[id];
     if (!p) return;
     if (avatar) p.avatar = avatar;
     if (lv) p.lv = lv;
     if (mvp !== undefined) p.mvp = mvp;
+    if (job) p.job = job;
+    if (title !== undefined) p.title = title;
+    if (eq) p.eq = eq;
     updateWho();
   });
   socket.on('held', ({ id, held }) => { if (players[id]) players[id].held = held; });
@@ -391,6 +413,16 @@
     }
   });
   socket.on('animals', syncAnimals);
+  // ⚔️ 전투
+  socket.on('mobs', syncMobs);
+  socket.on('dmg', (d) => dmgs.push(Object.assign(d, { t: performance.now() })));
+  socket.on('slash', (d) => slashes.push(Object.assign(d, { t: performance.now() })));
+  socket.on('teleport', ({ x, y }) => { me.x = x; me.y = y; me.pose = null; fishing = null; if (players[myId]) { players[myId].x = players[myId].dx = x; players[myId].y = players[myId].dy = y; } });
+  let myHp = 100, myMaxHp = 100, myDef = 0;
+  const showHp = () => { $('hpText').textContent = `❤️ ${myHp}`; $('hpBar').style.width = `${Math.max(0, myHp / myMaxHp * 100)}%`; $('hpBox').title = `체력 ${myHp} / ${myMaxHp} · 방어력 ${myDef}`; };
+  socket.on('hp', ({ hp, max, def }) => { myHp = hp; myMaxHp = max; myDef = def; showHp(); });
+  socket.on('php', ({ id, hp, max }) => { if (players[id]) { players[id].hp = hp; players[id].maxHp = max; } });
+  socket.on('enhanceResult', ({ ok, label }) => showReward({ title: ok ? `✨ 강화 성공! ${label}` : `💦 강화 실패... ${label} (무기는 그대로예요)`, items: {} }));
   socket.on('arrow', (a) => arrows.push(Object.assign(a, { t: performance.now() })));
   socket.on('fx', (f) => fxs.push(Object.assign(f, { t: performance.now() })));
   socket.on('chat', (m) => {
@@ -503,7 +535,7 @@
     for (let i = 0; i < 9; i++) {
       const it = my && my.inv[i];
       hb.append(el('div', { class: 'slot' + (i === sel ? ' sel' : ''), title: it ? itemName(it.id) : '', onclick: () => selectSlot(i) },
-        el('span', { class: 'k' }, i + 1), it ? iconImg(it.id) : null, it && it.n > 1 ? el('span', { class: 'n' }, it.n) : null));
+        el('span', { class: 'k' }, i + 1), it ? iconImg(it.id) : null, it && it.n > 1 ? el('span', { class: 'n' }, it.n) : null, it && it.en ? el('span', { class: 'en' }, `+${it.en}`) : null));
     }
   }
   function selectSlot(i) {
@@ -529,6 +561,16 @@
     if (def.tool === 'rod') {
       if (world.g(target.x, target.y) !== 'water') { showToast('물을 바라보고 던져요 🎣'); return; }
       socket.emit('fishCast', { x: target.x, y: target.y, slot: sel });
+      return;
+    }
+    if (def.weapon) {
+      // ⚔️ 무기: 마우스(또는 톡 한 곳) 쪽으로, 아니면 바라보는 쪽으로 공격
+      let ax, ay;
+      if (mouse.in && performance.now() - mouse.t < 4000) {
+        ax = mouse.sx * dpr / Sc + cam.x - me.x; ay = mouse.sy * dpr / Sc + cam.y - (me.y - 8);
+        me.dir = Math.abs(ax) > Math.abs(ay) ? (ax < 0 ? 'left' : 'right') : (ay < 0 ? 'up' : 'down');
+      } else [ax, ay] = DIRV[me.dir];
+      socket.emit('attack', { ax, ay });
       return;
     }
     if (def.tool === 'bow') {
@@ -571,6 +613,8 @@
     if (o.t === 'board') return openModal('quests');
     if (o.t === 'sign') return openModal('sign', { x: target.x, y: target.y });
     if (od.cook || (o.top && S.OBJ[o.top].cook)) return openModal('cook');
+    if (o.t === 'anvil') return openModal('enhance');
+    if (o.t === 'job_master') return openModal('job');
     socket.emit('act', { type: 'interact', x: target.x, y: target.y });
   }
   function doBreak() {
@@ -726,7 +770,7 @@
     const scroll = body.scrollTop;
     body.innerHTML = '';
     ({ bag: renderBag, shop: renderShop, quests: renderQuests, avatar: renderAvatar, sign: renderSign, help: renderHelp,
-      cook: renderCook, col: renderCol, pet: renderPet, trade: renderTrade, chest: renderChest, board: renderBoard, level: renderLevel })[modal](body);
+      cook: renderCook, col: renderCol, pet: renderPet, trade: renderTrade, chest: renderChest, board: renderBoard, level: renderLevel, enhance: renderEnhance, job: renderJob })[modal](body);
     body.scrollTop = scroll;
   }
   const tabs = (cur, list, onPick) => el('div', { class: 'tabs' },
@@ -747,13 +791,16 @@
             else { if (pick !== i) socket.emit('swap', { a: pick, b: i }); pick = null; }
             renderModal();
           },
-        }, i < 9 ? el('span', { class: 'k' }, i + 1) : null, it ? iconImg(it.id) : null, it && it.n > 1 ? el('span', { class: 'n' }, it.n) : null));
+        }, i < 9 ? el('span', { class: 'k' }, i + 1) : null, it ? iconImg(it.id) : null, it && it.n > 1 ? el('span', { class: 'n' }, it.n) : null, it && it.en ? el('span', { class: 'en' }, `+${it.en}`) : null));
       });
       body.append(grid);
       const it = pick !== null && my.inv[pick];
       body.append(it
         ? el('div', { class: 'info' }, iconImg(it.id),
-          el('div', { class: 'grow' }, el('b', {}, `${itemName(it.id)} ×${it.n}`), ' ', qoTag(it.id), el('br'), S.ITEMS[it.id].desc || '', el('br'), el('small', { style: 'opacity:.6' }, '옮길 칸을 누르세요')),
+          el('div', { class: 'grow' }, el('b', {}, `${S.itemLabel(it)} ×${it.n}`), ' ', qoTag(it.id), el('br'), S.ITEMS[it.id].desc || '',
+            S.ITEMS[it.id].weapon ? el('div', {}, `⚔️ 공격력 ${S.weaponAtk(it)}${S.ITEMS[it.id].cls ? ` · ${S.JOBS[S.ITEMS[it.id].cls].icon} ${S.JOBS[S.ITEMS[it.id].cls].name} 전용` : ' · 누구나'}`) : null,
+            el('br'), el('small', { style: 'opacity:.6' }, '옮길 칸을 누르세요')),
+          S.ITEMS[it.id].armor ? el('button', { class: 'btn pink', onclick: () => { socket.emit('equip', { slot: pick }); pick = null; } }, '🛡️ 장착') : null,
           el('button', { class: 'btn', onclick: () => { if (confirm(`${itemName(it.id)} ×${it.n}, 버릴까요?`)) { socket.emit('trash', { slot: pick }); pick = null; } } }, '🗑️ 버리기'))
         : el('div', { class: 'info' }, '💡 칸을 누르고 다른 칸을 누르면 자리가 바뀌어요. 윗줄 9칸이 단축바(1~9)예요.'));
     } else {
@@ -992,9 +1039,40 @@
   }
 
   // ⭐ 레벨 보상 (레벨마다 열리는 것)
+  // ⭐ 내 정보: 레벨 보상 / 🏷️ 칭호 / 🛡️ 장비·직업
+  let meTab = 'lv';
   function renderLevel(body) {
     const li = S.levelInfo(my.exp);
-    $('modalTitle').textContent = `⭐ 레벨 ${li.lv}`;
+    const J = S.JOBS[my.job] || S.JOBS.novice;
+    $('modalTitle').textContent = `${J.icon} ${J.name} · Lv.${li.lv}`;
+    body.append(tabs(meTab, [['lv', '⭐ 레벨 보상'], ['title', '🏷️ 칭호'], ['gear', '🛡️ 장비·능력치']], (t) => { meTab = t; }));
+    if (meTab === 'title') {
+      body.append(el('p', { class: 'note' }, '칭호는 이름 위에 보여요. 업적·직업·보스 처치로 얻어요.'));
+      const rows = el('div', { class: 'rows' });
+      const have = (t) => S.titleOk({ stats: my.stats, job: my.job, jobsDone: my.jobsDone }, t);
+      [...S.TITLES].sort((a, b) => (have(b) ? 1 : 0) - (have(a) ? 1 : 0)).forEach((t) => {
+        const ok = have(t), on = my.title === t.id;
+        rows.append(el('div', { class: 'row' + (ok ? '' : ' dim') + (on ? ' ready' : '') },
+          el('div', { class: 'grow' }, el('b', {}, `${ok ? '🏷️' : '🔒'} 「${t.name}」`), el('small', {}, t.desc)),
+          ok ? el('button', { class: 'btn' + (on ? ' pink' : ''), disabled: on, onclick: () => socket.emit('setTitle', { id: t.id }) }, on ? '다는 중' : '달기') : null));
+      });
+      body.append(rows);
+      return;
+    }
+    if (meTab === 'gear') {
+      const held = my.inv[sel], hd = held && S.ITEMS[held.id];
+      const atk = hd && hd.weapon ? S.weaponAtk(held) + Math.floor(li.lv / 2) : 0;
+      body.append(el('div', { class: 'qhead' },
+        el('b', {}, `${J.icon} ${J.name}`), el('small', {}, J.desc),
+        el('span', {}, `❤️ 체력 ${myHp} / ${myMaxHp}  ·  🛡️ 방어력 ${myDef} (받는 피해 -${Math.min(70, myDef * 3)}%)  ·  ⚔️ 공격력 ${atk || '-'} ${hd && hd.weapon ? `(${S.itemLabel(held)})` : '(무기를 들어보세요)'}`)));
+      body.append(el('p', { class: 'note' }, '🛡️ 장착한 갑옷 — 누르면 벗어요. 갑옷은 가방(I)에서 눌러서 장착해요.'));
+      body.append(el('div', { class: 'equipgrid' }, S.ARMOR_PARTS.map(([part, pname]) => {
+        const it = my.equip[part];
+        return el('div', { class: 'slot eq' + (it ? '' : ' empty'), title: it ? `${S.itemLabel(it)} — 누르면 벗기` : pname, onclick: () => { if (it) socket.emit('unequip', { part }); } },
+          it ? iconImg(it.id) : el('span', { class: 'eqname' }, pname));
+      })));
+      return;
+    }
     body.append(el('p', { class: 'note' }, `다음 레벨까지 ${li.need - li.cur} 경험치! 수확·낚시·채집·요리·사냥·퀘스트로 경험치를 얻어요. 레벨이 오를수록 더 많이 필요해요.`),
       el('div', { class: 'bar', style: 'height:12px;margin-bottom:12px' }, el('i', { style: `width:${(li.cur / li.need) * 100}%;background:#ffd34d` })));
     const rows = el('div', { class: 'rows' });
@@ -1006,6 +1084,59 @@
         el('div', { class: 'grow pick-row' }, u.map((t) => el('span', { class: 'chip' }, t)))));
     }
     body.append(rows);
+  }
+
+  // 🔨 대장간: 무기 강화
+  function renderEnhance(body) {
+    $('modalTitle').textContent = '🔨 대장간 · 무기 강화';
+    body.append(el('p', { class: 'note' }, `강화할수록 공격력이 올라요 (최대 +${S.MAX_EN}). 단계가 높을수록 성공률이 낮아지지만, 실패해도 무기는 부서지지 않아요. 재료는 던전에서 모아요.`));
+    const rows = el('div', { class: 'rows' });
+    const list = my.inv.map((it, i) => [it, i]).filter(([it]) => it && S.ITEMS[it.id] && S.ITEMS[it.id].weapon);
+    if (!list.length) rows.append(el('div', { class: 'row' }, '가방에 무기가 없어요. 상점(⚔️ 모험)이나 🔨 만들기에서 구해요.'));
+    for (const [it, i] of list) {
+      const en = it.en || 0, max = en >= S.MAX_EN;
+      const c = S.ENHANCE[en];
+      const need = max ? '최고 강화!' : `💰${c.coins} + ` + Object.entries(c.need).map(([id, n]) => `${itemName(id)} ${n} (${S.countItem(my.inv, id)})`).join(' + ');
+      const ok = !max && my.coins >= c.coins && Object.entries(c.need).every(([id, n]) => S.countItem(my.inv, id) >= n);
+      const next = Object.assign({}, it, { en: en + 1 });
+      rows.append(el('div', { class: 'row' + (ok || max ? '' : ' dim') }, iconImg(it.id),
+        el('div', { class: 'grow' }, el('b', {}, S.itemLabel(it)), ` ⚔️${S.weaponAtk(it)}${max ? '' : ` → ${S.weaponAtk(next)}`}`,
+          el('small', {}, max ? '✨ 최고 강화' : `성공률 ${Math.round(c.rate * 100)}% · ${need}`)),
+        max ? null : el('button', { class: 'btn pink', disabled: !ok, onclick: () => socket.emit('enhance', { slot: i }) }, `+${en + 1} 강화`)));
+    }
+    body.append(rows);
+  }
+
+  // 🧭 전직 교관
+  function renderJob(body) {
+    const li = S.levelInfo(my.exp);
+    $('modalTitle').textContent = '🧭 전직 교관';
+    if (my.job !== 'novice') {
+      const J = S.JOBS[my.job];
+      body.append(el('div', { class: 'qhead' }, el('b', {}, `${J.icon} 지금 직업: ${J.name}`), el('small', {}, J.desc)),
+        el('p', { class: 'note' }, `다른 직업으로 바꾸고 싶으면 💰${S.JOB_RESET_COST}을 내고 모험가로 돌아간 뒤 다시 전직 퀘스트를 깨요.`),
+        el('button', { class: 'btn', disabled: my.coins < S.JOB_RESET_COST, onclick: () => { if (confirm(`💰${S.JOB_RESET_COST}을 내고 모험가로 돌아갈까요?`)) socket.emit('jobReset'); } }, `🔄 모험가로 돌아가기 (💰${S.JOB_RESET_COST})`));
+      return;
+    }
+    if (my.jobQuest) {
+      const J = S.JOBS[my.jobQuest.cls];
+      const prog = J.quest.map((q) => [q, Math.min(q.n, Math.max(0, (my.stats[q.stat] || 0) - (my.jobQuest.base[q.stat] || 0)))]);
+      const done = prog.every(([q, v]) => v >= q.n);
+      body.append(el('div', { class: 'qhead' }, el('b', {}, `${J.icon} ${J.name} 전직 퀘스트`), el('small', {}, J.desc)));
+      const rows = el('div', { class: 'rows' });
+      prog.forEach(([q, v]) => rows.append(el('div', { class: 'row q' + (v >= q.n ? ' ready' : '') },
+        el('div', { class: 'grow' }, q.t, el('div', { class: 'bar' }, el('i', { style: `width:${v / q.n * 100}%` })), el('small', {}, `${v} / ${q.n}`)))));
+      body.append(rows, el('p', { class: 'note', style: 'margin-top:10px' }, `🎁 보상: ${Object.keys(J.reward).map(itemName).join(', ')} + 칭호 「${J.name}」 + ⭐300`),
+        el('div', { class: 'pick-row' },
+          done ? claimBtn(J.reward, () => socket.emit('jobComplete')) : el('button', { class: 'btn', disabled: true }, '퀘스트를 깨면 전직!'),
+          el('button', { class: 'btn', onclick: () => { if (confirm('전직 퀘스트를 그만둘까요?')) socket.emit('jobCancel'); } }, '그만두기')));
+      return;
+    }
+    body.append(el('p', { class: 'note' }, li.lv >= S.JOB_LV ? '어떤 길로 갈까요? 직업을 고르면 전직 퀘스트가 시작돼요.' : `🔒 레벨 ${S.JOB_LV}부터 전직할 수 있어요 (지금 Lv.${li.lv}). 그 전엔 목검·활로 1성 던전(Lv.5)에서 연습해요!`));
+    body.append(el('div', { class: 'jobgrid' }, Object.entries(S.JOBS).filter(([k]) => k !== 'novice').map(([k, J]) => el('div', { class: 'jobcard' },
+      el('b', {}, `${J.icon} ${J.name}`), el('small', {}, J.desc),
+      el('small', { style: 'opacity:.7' }, '퀘스트: ' + J.quest.map((q) => q.t).join(' / ')),
+      el('button', { class: 'btn pink', disabled: li.lv < S.JOB_LV, onclick: () => socket.emit('jobStart', { cls: k }) }, '이 길로!')))));
   }
 
   function renderPet(body) {
@@ -1177,6 +1308,9 @@
       k('Esc', '창 닫기 / 낚시 그만'),
       k('📱 휴대폰', '왼쪽 아래 조이스틱 = 이동 · 화면 톡 = 그 칸 겨누기 · [사용]=Space · [E] · [X] · [R] · 💬 = 채팅')),
       el('p', { style: 'font-size:12px;line-height:1.8;margin:14px 0 0' },
+        '⚔️ 던전: 마을 위쪽 던전 지대. 1성(Lv.5)·2성(Lv.12)·3성(Lv.20) 문 앞에서 E. 무기를 들고 Space(사용)로 공격, 물약·요리로 체력 회복', el('br'),
+        '🧭 전직: Lv.10부터 마을 전직 교관(E) → 기사·궁수·마법사·닌자 전직 퀘스트 / 🔨 대장간(모루) E → 무기 강화 / 🛡️ 갑옷은 🔨만들기 후 가방에서 장착', el('br'),
+        '👑 보스는 가장 많이 때린 1~3등만 보상! 처치하면 채팅에 딜량 순위가 나와요 / 🏷️ 칭호는 왼쪽 위 Lv 버튼 → 칭호', el('br'),
         '🗺️ 마을 오른쪽과 아래는 집 짓는 땅이에요. 맨 아래로 내려가면 생산 구역: 왼쪽 ⛏ 동굴(돌·철·금·수정·동굴어), 오른쪽 🌲 나무꾼의 숲(나무·버섯·산딸기·사슴·송어)', el('br'),
         '🍳 요리: 가스레인지·전자레인지·모닥불·벽난로 앞에서 E. 숲 캠프에 모닥불이 있어요', el('br'),
         '📦 상자: 만들기(나무 8개)나 상점에서 구해서 놓고 E로 열어요. 27칸 보관(큰 상자 54칸은 Lv.10), 주인은 잠글 수 있어요', el('br'),
@@ -1293,12 +1427,31 @@
     const u = dpr;
     ctx.font = `${12 * u}px ${FONT}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const name = `${p.mvp ? '👑 ' : ''}Lv.${p.lv || 1} ${p.name}${id === myId ? ' ★' : ''}`;
+    const jobIcon = p.job && p.job !== 'novice' && S.JOBS[p.job] ? S.JOBS[p.job].icon + ' ' : '';
+    const name = `${p.mvp ? '👑 ' : ''}${jobIcon}Lv.${p.lv || 1} ${p.name}${id === myId ? ' ★' : ''}`;
     const nw = ctx.measureText(name).width + 10 * u;
     ctx.fillStyle = 'rgba(74,59,92,0.75)';
     roundRect(sx - nw / 2, headTop - 18 * u, nw, 16 * u, 4 * u); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.fillText(name, sx, headTop - 10 * u);
+    let lift = 0;
+    // 🏷️ 칭호
+    if (p.title) {
+      ctx.font = `${10 * u}px ${FONT}`;
+      const tw = ctx.measureText(`「${p.title}」`).width + 8 * u;
+      ctx.fillStyle = 'rgba(255,211,77,0.9)';
+      roundRect(sx - tw / 2, headTop - 33 * u, tw, 14 * u, 4 * u); ctx.fill();
+      ctx.fillStyle = '#4a3b5c'; ctx.fillText(`「${p.title}」`, sx, headTop - 26 * u);
+      lift = 15 * u;
+    }
+    // ❤️ 체력이 줄었으면 이름 아래 체력 바
+    const hp = id === myId ? myHp : p.hp, mhp = id === myId ? myMaxHp : p.maxHp;
+    if (hp != null && mhp && hp < mhp) {
+      const bw = 30 * u;
+      ctx.fillStyle = '#2b2233'; ctx.fillRect(sx - bw / 2 - u, headTop - 2 * u, bw + 2 * u, 5 * u);
+      ctx.fillStyle = hp / mhp < 0.3 ? '#e8364f' : '#7ed492'; ctx.fillRect(sx - bw / 2, headTop - u, bw * Math.max(0, hp / mhp), 3 * u);
+    }
+    ctx.font = `${12 * u}px ${FONT}`;
     let text = null;
     if (p.bubble && p.bubble.until > now) text = p.bubble.text;
     else if (p.typing) text = '.'.repeat(1 + Math.floor(now / 350) % 3);
@@ -1306,7 +1459,7 @@
     if (!text) return;
     const life = p.bubble && p.bubble.until > now ? p.bubble.until - now : BUBBLE_MS;
     ctx.globalAlpha = Math.min(1, life / 400);
-    bubble(sx, headTop - 26 * u, text);
+    bubble(sx, headTop - 26 * u - lift, text);
     ctx.globalAlpha = 1;
   }
 
@@ -1338,6 +1491,10 @@
     if (o.t === 'crop' && !o.water) return '💧 물 필요';
     if (od.cook || (o.top && S.OBJ[o.top].cook)) return 'E 요리 🍳';
     if (o.t === 'notice_board') return 'E 마을 게시판 📌';
+    if (o.t === 'dungeon_gate') { const d = S.DUNGEONS[(o.star || 1) - 1]; return `E 입장 · ${'⭐'.repeat(d.star)} Lv.${d.lv}+`; }
+    if (o.t === 'dungeon_exit') return 'E 던전 나가기';
+    if (o.t === 'anvil') return 'E 대장간 (무기 강화) 🔨';
+    if (o.t === 'job_master') return 'E 전직 교관 🧭';
     if (o.top && (S.OBJ[o.top].fx || S.OBJ[o.top].msg)) return 'E · X 위에 올린 것 회수';
     if (od.chest) return o.locked ? 'E 상자 열기 🔒' : 'E 상자 열기 📦';
     if (od.pick) return 'E 따기';
@@ -1368,16 +1525,19 @@
       return;
     }
     const step = p.moving ? Math.floor(now / 140) % 2 : -1;
-    D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? S.ROT_DIRS[rot] : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose });
+    D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? S.ROT_DIRS[rot] : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose, eq: p.eq });
   }
 
   function drawDarkness(now) {
-    const inCave = me.x < S.BX * TILE && me.y >= S.CY * TILE + 8;
-    const t = me.x < S.BX * TILE ? Math.max(0, Math.min(1, (me.y - (S.CY - 1) * TILE) / (TILE * 4))) : 0;
-    if (!inCave && t <= 0) return;
+    // 어둠: 동굴(입구에서 점점) · 던전 안(조금 어둡게)
+    const myG = world.g(Math.floor(me.x / TILE), Math.floor((me.y - 4) / TILE));
+    let alpha = 0;
+    if (myG === 'dungeon') alpha = 0.55;
+    else if (me.x >= S.TX * TILE && me.x < S.BX * TILE) alpha = 0.86 * Math.max(0, Math.min(1, (me.y - (S.CY - 1) * TILE) / (TILE * 4)));
+    if (alpha <= 0) return;
     dctx.globalCompositeOperation = 'source-over';
     dctx.clearRect(0, 0, dark.width, dark.height);
-    dctx.fillStyle = `rgba(12,8,24,${0.86 * t})`;
+    dctx.fillStyle = `rgba(12,8,24,${alpha})`;
     dctx.fillRect(0, 0, dark.width, dark.height);
     dctx.globalCompositeOperation = 'destination-out';
     const hole = (wx, wy, r) => {
@@ -1443,11 +1603,21 @@
 
     // 캐릭터 + 동물 (아래쪽에 있는 것을 나중에 그려요)
     const order = Object.entries(players).sort((a, b) => a[1].dy - b[1].dy);
-    const drawables = order.map(([, p]) => ({ y: charPos(p)[1], p })).concat(Object.values(animals).map((an) => ({ y: an.dy, an })));
+    const drawables = order.map(([, p]) => ({ y: charPos(p)[1], p })).concat(Object.values(animals).map((an) => ({ y: an.dy, an })))
+      .concat(Object.values(mobs).map((mb) => ({ y: mb.dy, mb })));
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) {
       if (d.p) drawPlayer(d.p, now);
-      else {
+      else if (d.mb) {
+        // ⚔️ 몬스터 + 체력 바
+        const mb = d.mb, def = S.MOBS[mb.kind];
+        if (mb.hurt && Math.floor(now / 70) % 2) ctx.globalAlpha = 0.5;
+        D.drawMob(ctx, Math.round(mb.dx), Math.round(mb.dy), mb.kind, mb.dir, mb.moving ? Math.floor(now / 160) % 2 : -1, now);
+        ctx.globalAlpha = 1;
+        const bw = def.boss ? 30 : 14, by = Math.round(mb.dy) - (def.boss ? 46 : 22);
+        ctx.fillStyle = '#2b2233'; ctx.fillRect(Math.round(mb.dx) - bw / 2 - 1, by - 1, bw + 2, 4);
+        ctx.fillStyle = def.boss ? '#ff5c5c' : '#e85d5d'; ctx.fillRect(Math.round(mb.dx) - bw / 2, by, bw * mb.hp / 100, 2);
+      } else {
         const an = d.an;
         if ((an.flags & 4) && Math.floor(now / 80) % 2) continue;
         D.drawAnimal(ctx, Math.round(an.dx), Math.round(an.dy), an.kind, an.dir, an.moving ? Math.floor(now / 160) % 2 : -1, now);
@@ -1465,9 +1635,23 @@
       if (age > 1) { arrows.splice(i, 1); continue; }
       const len = Math.hypot(a.x1 - a.x0, a.y1 - a.y0) || 1, ux = (a.x1 - a.x0) / len, uy = (a.y1 - a.y0) / len;
       const hx = a.x0 + (a.x1 - a.x0) * age, hy = a.y0 + (a.y1 - a.y0) * age;
+      if (a.magic) { // 🔮 마법 구슬
+        ctx.fillStyle = 'rgba(180,140,255,0.5)'; ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#e6d9ff'; ctx.fillRect(hx - 1.5, hy - 1.5, 3, 3);
+        continue;
+      }
       ctx.strokeStyle = '#7a4e2d'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(hx - ux * 7, hy - uy * 7); ctx.lineTo(hx, hy); ctx.stroke();
       ctx.fillStyle = '#9aa7b0'; ctx.fillRect(hx - 1, hy - 1, 2, 2);
+    }
+    // ⚔️ 검·닌자 베기
+    for (let i = slashes.length - 1; i >= 0; i--) {
+      const s = slashes[i], age = (now - s.t) / 180;
+      if (age > 1) { slashes.splice(i, 1); continue; }
+      const ang = Math.atan2(s.ay, s.ax), r = s.kind === 'sword' ? 18 : 13;
+      ctx.strokeStyle = s.kind === 'sword' ? `rgba(255,255,255,${1 - age})` : `rgba(180,160,255,${1 - age})`;
+      ctx.lineWidth = s.kind === 'sword' ? 2.5 : 1.5;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r * (0.6 + age * 0.4), ang - 0.9, ang + 0.9); ctx.stroke();
     }
     for (const [id, p] of order) {
       if (!p.fishing) continue;
@@ -1512,6 +1696,26 @@
       ctx.font = `${18 * dpr}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(f.text, sx, sy - age * 30 * dpr);
       ctx.globalAlpha = 1;
+    }
+    // ⚔️ 피해 숫자 (빨강 = 내가 맞음, 노랑 = 치명타)
+    for (let i = dmgs.length - 1; i >= 0; i--) {
+      const f = dmgs[i], age = (now - f.t) / 800;
+      if (age > 1) { dmgs.splice(i, 1); continue; }
+      const [sx, sy] = toScreen(f.x, f.y);
+      ctx.globalAlpha = 1 - age * age;
+      ctx.font = `bold ${(f.crit ? 17 : 13) * dpr}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3 * dpr; ctx.strokeStyle = '#2b2233';
+      const txt = (f.crit ? '💥' : '') + f.v;
+      ctx.strokeText(txt, sx, sy - age * 26 * dpr);
+      ctx.fillStyle = f.player ? '#ff5c5c' : f.crit ? '#ffd34d' : '#ffffff';
+      ctx.fillText(txt, sx, sy - age * 26 * dpr);
+      ctx.globalAlpha = 1;
+    }
+    // 내 체력이 적으면 화면 가장자리가 빨개져요
+    if (myHp < myMaxHp * 0.3 && myHp > 0) {
+      const g = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) * 0.3, canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.7);
+      g.addColorStop(0, 'rgba(232,54,79,0)'); g.addColorStop(1, `rgba(232,54,79,${0.25 + Math.sin(now / 200) * 0.08})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     if (fishing && fishing.bite) {
       const [sx, sy] = toScreen(fishing.x * TILE + 8, fishing.y * TILE);

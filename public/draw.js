@@ -118,6 +118,19 @@
         R('#f2c230', 0, 0, 16, 16); R('#d9a81c', 0, 15, 16, 1); R('#d9a81c', 15, 0, 1, 16);
         R('#ffe27a', 2, 2, 5, 1); R('#ffe27a', 2, 2, 1, 4); R('#fff6c9', 3, 3, 1, 1);
         break;
+      case 'dungeon': {
+        const st = S.dungeonStar(x);
+        const [a, b, c] = st === 1 ? ['#4f5a4a', '#5f6b58', '#43503f'] : st === 2 ? ['#5b5560', '#6a6470', '#4d4852'] : ['#5a3a34', '#6b463e', '#4a2e2a'];
+        R(a, 0, 0, 16, 16); R(c, 0, 7, 16, 1); R(c, 8, 0, 1, 7); R(c, 3, 8, 1, 8); R(c, 12, 8, 1, 8);
+        R(b, 1, 1, 3, 1); R(b, 9, 9, 3, 1);
+        if (st === 1 && hash(x, y) < 0.2) R('#6e9e4a', 4, 3, 2, 1);
+        if (st === 2 && hash(x, y) < 0.08) { R('#e6e0d6', 5, 11, 4, 1); R('#e6e0d6', 4, 10, 1, 3); }
+        break;
+      }
+      case 'lava':
+        R('#e8502a', 0, 0, 16, 16); R('#ffb02e', Math.floor(hash(x, y) * 10), 4, 4, 2); R('#ffd34d', Math.floor(hash(y, x) * 10) + 2, 11, 3, 1);
+        if (world) { const e = (nx, ny) => gAt(world, nx, ny) !== 'lava'; if (e(x, y - 1)) R('#8a2e1a', 0, 0, 16, 2); if (e(x, y + 1)) R('#8a2e1a', 0, 14, 16, 2); }
+        break;
       case 'path_park':
         R('#c9c2b8', 0, 0, 16, 16);
         for (let j = 0; j < 4; j++) { R('#a89f93', 0, j * 4 + 3, 16, 1); R('#a89f93', (j % 2 ? 0 : 4) + 0, j * 4, 1, 3); R('#a89f93', (j % 2 ? 8 : 12), j * 4, 1, 3); }
@@ -732,6 +745,40 @@
         if (o.locked) { R('#9aa7b0', 6, 6, 4, 5); R('#c4ced6', 7, 4, 2, 2); R('#2b2233', 7, 8, 2, 1); }
         else { R('#ffd34d', 7, 7, 2, 3); R('#b58a12', 7, 9, 2, 1); }
         break;
+      // ── 던전
+      case 'dungeon_wall': {
+        const st = S.dungeonStar(x);
+        const [top, front, line] = st === 1 ? ['#6b7563', '#4f5a4a', '#343c30'] : st === 2 ? ['#77717c', '#5b5560', '#3b3740'] : ['#7a4a40', '#5a3a34', '#3a221e'];
+        const below = oAt(world, x, y + 1);
+        R(top, 0, 0, 16, 16); R(shade(top, 0.15), 0, 0, 16, 1);
+        R(line, 0, 5, 16, 1); R(line, 7, 0, 1, 5); R(line, 3, 6, 1, 5); R(line, 11, 6, 1, 5); R(line, 0, 11, 16, 1);
+        if (!(below && below.t === 'dungeon_wall') && world) { R(front, 0, 11, 16, 5); R(line, 0, 11, 16, 1); R(line, 5, 12, 1, 4); R(line, 12, 12, 1, 4); }
+        break;
+      }
+      case 'dungeon_gate': {
+        const col = ['#a8743f', '#9aa7b0', '#c0392b'][(o.star || 1) - 1];
+        R('#3b3740', 0, 0, 16, 16); R('#2b2233', 2, 2, 12, 14); R(col, 1, 0, 14, 3); R(col, 1, 0, 2, 16); R(col, 13, 0, 2, 16);
+        for (let i = 4; i < 13; i += 3) R('#5a5560', i, 3, 1, 13);
+        R('#ffd34d', 5, 1, 1, 1); R('#ffd34d', 7, 1, 2, 1); R('#ffd34d', 10, 1, 1, 1);
+        for (let i = 0; i < (o.star || 1); i++) R('#ffe066', 6 + i * 2 - (o.star - 1), 8, 1, 1);
+        break;
+      }
+      case 'dungeon_exit':
+        R('rgba(0,0,0,0.15)', 2, 13, 12, 3);
+        R('#5a5560', 2, 2, 12, 13); R('#7e6fe0', 4, 4, 8, 10); R('#b8adff', 6, 6, 4, 6); R('#ffffff', 7, 8, 2, 2);
+        break;
+      case 'job_master':
+        R('rgba(0,0,0,0.15)', 2, 13, 12, 3);
+        R('#4a3b5c', 4, 7, 8, 8); R('#6c3fb5', 5, 8, 6, 6); R('#ffd34d', 7, 9, 2, 4);
+        R('#ffe0c2', 5, 1, 6, 6); R('#c9c9d3', 4, 0, 8, 2); R('#c9c9d3', 4, 5, 2, 4); R('#c9c9d3', 10, 5, 2, 4); R('#2b2233', 6, 3, 1, 1); R('#2b2233', 9, 3, 1, 1);
+        R('#a8743f', 13, 1, 1, 14); R('#7fdcff', 12, 0, 3, 2);
+        break;
+      case 'anvil':
+        R('rgba(0,0,0,0.15)', 1, 13, 14, 3);
+        R('#6e4626', 4, 10, 8, 5); R('#8b5a3c', 4, 10, 8, 1);
+        R('#5a5560', 1, 4, 14, 4); R('#7e7a85', 1, 4, 14, 1); R('#5a5560', 5, 8, 6, 2); R('#3b3740', 0, 5, 2, 2);
+        R('#a8743f', 11, 0, 1, 4); R('#9aa7b0', 9, 0, 5, 2);
+        break;
       // ── 공원
       case 'park_bench':
         shadow(R, 14);
@@ -1096,6 +1143,11 @@
         R(f % 2 ? '#fff3a3' : '#ffd34d', 7, 0, 2, 2);
         break;
       }
+      case 'dungeon_exit': {
+        const c = ['#7e6fe0', '#9b8cff', '#b8adff', '#9b8cff'][f % 4];
+        R(c, 4, 4, 8, 10); R('#ffffff', 7 + Math.round(Math.sin(t / 200) * 2), 6 + (f % 6), 1, 1); R('#e6d9ff', 5, 12 - (f % 8), 1, 1);
+        break;
+      }
       case 'candle':
         for (const cx of [3, 7, 11]) { R(f % 2 ? '#ffb02e' : '#ff9a2e', cx, 2 - ((f + cx) % 2), 2, 2); R('#fff3a3', cx, 2, 1, 1); }
         break;
@@ -1268,6 +1320,46 @@
       case 'sashimi': R('#3b3740', 1, 9, 14, 5); R('#ff9a7a', 2, 7, 3, 4); R('#ffb3a0', 6, 7, 3, 4); R('#ffffff', 10, 7, 3, 4); R('#7ed492', 13, 8, 1, 3); break;
     }
   }
+  // 무기 아이콘 (대각선)
+  const WEAPON_COL = {
+    wood_sword: ['#c99558', '#8b5a3c'], iron_sword: ['#c4ced6', '#6e4626'], knight_sword: ['#e6f0ff', '#d4a017'], hero_sword: ['#ffe27a', '#c0392b'],
+    long_bow: ['#8b5a3c', '#ffffff'], elf_bow: ['#7ed492', '#ffffff'], phoenix_bow: ['#ff7a1a', '#ffe066'],
+    staff_basic: ['#a8743f', '#7fdcff'], crystal_staff: ['#c9c9d3', '#b48cff'], arch_staff: ['#4a3b5c', '#ff5c8a'],
+    kunai: ['#9aa7b0', '#3b3740'], ninja_blade: ['#c4ced6', '#2b2233'], shadow_blade: ['#6c3fb5', '#2b2233'],
+  };
+  function drawWeapon(R, id, it) {
+    const [a, b] = WEAPON_COL[id] || ['#c4ced6', '#6e4626'];
+    switch (it.weapon) {
+      case 'sword': {
+        const big = id === 'hero_sword' ? 1 : 0;
+        for (let i = 0; i < 9; i++) R(a, 5 + i, 9 - i, 2 + big, 2);
+        R(shade(a, 0.3), 6, 8, 1, 1); R(b, 2, 10, 6, 2); R(b, 4, 8, 2, 6); R('#6e4626', 2, 12, 2, 2); R('#ffd34d', 1, 13, 2, 2);
+        break;
+      }
+      case 'bow':
+        for (let i = 0; i < 6; i++) { R(a, 3 + Math.round(i * 0.4), 2 + i, 2, 1); R(a, 3 + Math.round(i * 0.4), 13 - i, 2, 1); }
+        R(b, 4, 2, 1, 12); R('#9aa7b0', 6, 7, 8, 1); R('#e85d5d', 13, 6, 2, 3);
+        if (id === 'phoenix_bow') { R('#ffe066', 2, 1, 2, 1); R('#ffe066', 2, 14, 2, 1); }
+        break;
+      case 'staff':
+        for (let i = 0; i < 10; i++) R(a, 3 + i, 13 - i, 2, 1);
+        R(b, 10, 1, 5, 5); R('#ffffff', 11, 2, 2, 2); R(shade(b, -0.3), 10, 5, 5, 1);
+        break;
+      case 'ninja':
+        if (id === 'kunai') { R(a, 8, 2, 3, 3); R(a, 7, 5, 3, 3); R(a, 6, 7, 2, 2); R(b, 4, 9, 3, 4); R('#c4ced6', 2, 12, 3, 3); R('#ffffff', 3, 13, 1, 1); }
+        else { for (let i = 0; i < 9; i++) R(a, 5 + i, 9 - i, 2, 1); R(b, 3, 10, 4, 4); R('#e85d5d', 2, 9, 6, 1); }
+        break;
+    }
+  }
+  function drawArmorIcon(R, ar) {
+    const c = S.ARMOR_TIERS[ar.tier].col, d = shade(c, -0.3), l = shade(c, 0.35);
+    switch (ar.part) {
+      case 'helmet': R(c, 3, 3, 10, 7); R(c, 2, 6, 12, 6); R('#2b2233', 4, 8, 8, 3); R(l, 4, 4, 4, 1); R(d, 2, 11, 2, 2); R(d, 12, 11, 2, 2); break;
+      case 'chest': R(c, 2, 3, 12, 10); R(c, 0, 3, 3, 5); R(c, 13, 3, 3, 5); R('#2b2233', 6, 2, 4, 2); R(l, 3, 4, 3, 1); R(d, 2, 12, 12, 1); R(d, 7, 5, 2, 7); break;
+      case 'legs': R(c, 3, 2, 10, 4); R(c, 3, 6, 4, 8); R(c, 9, 6, 4, 8); R(d, 3, 2, 10, 1); R(l, 4, 7, 1, 5); R(l, 10, 7, 1, 5); break;
+      case 'boots': R(c, 2, 6, 4, 6); R(c, 10, 6, 4, 6); R(c, 1, 11, 6, 3); R(c, 9, 11, 6, 3); R(d, 1, 13, 6, 1); R(d, 9, 13, 6, 1); R(l, 3, 7, 1, 3); R(l, 11, 7, 1, 3); break;
+    }
+  }
   function drawItem(g, ox, oy, id) {
     const R = pen(g, ox, oy);
     const it = S.ITEMS[id];
@@ -1282,6 +1374,8 @@
     if (S.CROPS[id]) { drawCrop(R, id, 3, false); return; }
     if (it.animal) { drawAnimal(g, ox + (S.ANIMALS[it.animal].pet ? 7 : 8), oy + 15, it.animal, 'right', -1, 0); return; }
     if (it.food) { drawFood(R, id); return; }
+    if (it.weapon && id !== 'bow') { drawWeapon(R, id, it); return; }
+    if (it.armor) { drawArmorIcon(R, it.armor); return; }
     if (it.fish) {
       if (id === 'fish_shrimp') {
         R('#ff9ee6', 3, 6, 8, 4); R('#ffc9f0', 4, 6, 3, 1); R('#ff9ee6', 10, 7, 3, 5); R('#ff9ee6', 1, 4, 3, 3); R('#2b2233', 2, 5, 1, 1);
@@ -1331,6 +1425,17 @@
       case 'wool': R('#f7f4ee', 3, 5, 10, 7); R('#f7f4ee', 5, 3, 6, 11); R('#e6e0d6', 4, 9, 8, 1); R('#ffffff', 6, 5, 3, 2); break;
       case 'meat': R('#e85d5d', 3, 4, 8, 7); R('#ff8080', 4, 5, 4, 2); R('#fff7ec', 10, 9, 4, 2); R('#fff7ec', 13, 8, 2, 4); break;
       case 'hide': R('#a8743f', 3, 3, 10, 10); R('#a8743f', 1, 5, 14, 6); R('#8b5a3c', 5, 6, 6, 4); break;
+      case 'potion_s': case 'potion_m': case 'potion_l': {
+        const c = { potion_s: '#e85d5d', potion_m: '#ff5c8a', potion_l: '#c0392b' }[id], big = id === 'potion_l' ? 1 : 0;
+        R('#c4c0ba', 6, 1, 4, 2); R('#a8743f', 6, 0, 4, 1); R('#dff6ff', 4 - big, 3, 8 + big * 2, 2);
+        R('#dff6ff', 3 - big, 5, 10 + big * 2, 9); R(c, 4 - big, 7, 8 + big * 2, 6); R('#ffffff', 5, 6, 2, 2); R(shade(c, -0.25), 4 - big, 12, 8 + big * 2, 1);
+        break;
+      }
+      case 'slime_gel': R('#7ed492', 3, 6, 10, 8); R('#7ed492', 5, 4, 6, 2); R('#b8f0c4', 5, 6, 3, 2); R('#4caf50', 3, 13, 10, 1); break;
+      case 'bone': R('#f2ede4', 3, 7, 10, 2); R('#f2ede4', 1, 5, 3, 3); R('#f2ede4', 1, 8, 3, 3); R('#f2ede4', 12, 5, 3, 3); R('#f2ede4', 12, 8, 3, 3); R('#d9d0bf', 4, 8, 8, 1); break;
+      case 'ecto': R('#c9f2ff', 4, 3, 8, 9); R('#c9f2ff', 3, 6, 10, 6); R('#ffffff', 5, 5, 2, 2); R('#2b2233', 6, 7, 1, 1); R('#2b2233', 9, 7, 1, 1); R('#9fdcf7', 3, 12, 2, 2); R('#9fdcf7', 7, 12, 2, 2); R('#9fdcf7', 11, 12, 2, 2); break;
+      case 'fire_core': R('#ff7a1a', 4, 4, 8, 8); R('#ffb02e', 5, 5, 6, 6); R('#ffe066', 6, 6, 4, 4); R('#ff7a1a', 7, 2, 2, 2); R('#ff7a1a', 7, 12, 2, 2); R('#ff7a1a', 2, 7, 2, 2); R('#ff7a1a', 12, 7, 2, 2); break;
+      case 'dragon_scale': R('#c0392b', 3, 3, 10, 10); R('#e74c3c', 4, 4, 8, 4); R('#8a2e1a', 3, 8, 10, 1); R('#8a2e1a', 7, 3, 1, 10); R('#ffd34d', 5, 5, 1, 1); break;
       case 'duck_egg': R('#dff1f6', 5, 3, 6, 10); R('#dff1f6', 4, 5, 8, 7); R('#c3dfe8', 5, 11, 6, 2); R('#ffffff', 6, 5, 2, 2); R('#9fc7d4', 9, 7, 1, 1); break;
       case 'goat_milk': R('#c9a96b', 6, 1, 4, 2); R('#fff7ec', 4, 3, 8, 11); R('#e8d9c6', 4, 8, 8, 2); R('#e6dfd1', 4, 13, 8, 1); break;
       case 'truffle': R('#3b2f2a', 3, 5, 10, 8); R('#5a4a40', 4, 4, 8, 3); R('#2b2220', 5, 9, 2, 1); R('#2b2220', 9, 7, 2, 1); R('#6e5a4c', 5, 5, 2, 1); break;
@@ -1416,8 +1521,17 @@
 
     // 다리
     const longSkirt = top === 'hanbok' || top === 'royal';
-    const leg = top === 'dress' ? skin : (top === 'overalls' ? tc : longSkirt ? bc : bc);
-    const L = (lx, ly, h) => { R(leg, lx, ly, 3, h); R(shoe, lx, ly + h - 1, 3, 1); };
+    // 갑옷 (opt.eq = { helmet, chest, legs, boots } → 등급 이름)
+    const eq = opt.eq || {};
+    const AC = (part) => eq[part] && S.ARMOR_TIERS[eq[part]] ? S.ARMOR_TIERS[eq[part]].col : null;
+    const legArmor = AC('legs'), bootArmor = AC('boots');
+    const leg = legArmor || (top === 'dress' ? skin : (top === 'overalls' ? tc : longSkirt ? bc : bc));
+    const L = (lx, ly, h) => {
+      R(leg, lx, ly, 3, h);
+      if (legArmor) R(shade(legArmor, 0.3), lx, ly, 1, h);
+      if (bootArmor) { R(bootArmor, lx, ly + h - 2, 3, 2); R(shade(bootArmor, -0.3), lx, ly + h - 1, 3, 1); }
+      else R(shoe, lx, ly + h - 1, 3, 1);
+    };
     if (opt.sit) { L(-4, -2, 2); L(1, -2, 2); }
     else if (step === -1) { L(-4, -4, 4); L(1, -4, 4); }
     else if (step === 0) { L(-4, -5, 5); L(1, -4, 3); }
@@ -1480,6 +1594,12 @@
     const arm = sleeve ? (top === 'armor' ? '#b8c2ca' : top === 'chefcoat' ? '#ffffff' : top === 'raincoat' ? '#ffd34d' : tc) : skin;
     R(arm, -6, -9 + b, 1, 4); R(arm, 5, -9 + b, 1, 4);
     if (sleeve) { R(skin, -6, -6 + b, 1, 1); R(skin, 5, -6 + b, 1, 1); }
+    const chestArmor = AC('chest');
+    if (chestArmor) {
+      R(chestArmor, -5, -10 + b, 10, 6); R(shade(chestArmor, 0.35), -4, -10 + b, 3, 1); R(shade(chestArmor, -0.3), -5, -5 + b, 10, 1);
+      R(shade(chestArmor, -0.2), -7, -10 + b, 2, 3); R(shade(chestArmor, -0.2), 5, -10 + b, 2, 3);
+      if (dir !== 'up') R(shade(chestArmor, -0.2), -1, -9 + b, 2, 3);
+    }
 
     // 머리 (얼굴)
     R(skin, -6, hy + 1, 12, 10); R(skin, -5, hy, 10, 12);
@@ -1619,9 +1739,77 @@
         R('#e85d5d', -6, hy - 4, 12, 4); R('#e85d5d', -3, hy - 6, 7, 2); R('#e85d5d', 3, hy - 5, 3, 3); R('#ffffff', -7, hy - 1, 14, 2); R('#ffffff', 5, hy - 3, 3, 3);
         break;
     }
+    const helmArmor = AC('helmet');
+    if (helmArmor) {
+      const d = shade(helmArmor, -0.3), l = shade(helmArmor, 0.35);
+      R(helmArmor, -7, hy - 2, 14, 6); R(l, -5, hy - 2, 5, 1);
+      if (dir === 'up') R(helmArmor, -7, hy + 3, 14, 6);
+      else if (side) R(helmArmor, fl > 0 ? 1 : -7, hy + 3, 6, 6);
+      else { R(helmArmor, -7, hy + 3, 2, 6); R(helmArmor, 5, hy + 3, 2, 6); R(d, -1, hy + 3, 2, 3); }
+      R(d, -7, hy + 3, 14, 1);
+    }
     if (dir === 'up' && av.back && av.back !== 'none') drawBack(R, av.back, dir, hy, b);
     if (dir !== 'up' && opt.held) drawHeld(g, x, y + b, dir, opt.held);
   }
 
-  window.DRAW = { shade, drawTile, drawItem, drawItemRot, drawTop, drawChar, drawAnimal, drawGround, drawObject, drawAnim, hasAnim, lightOf, pen };
+  // ───────── 몬스터 ─────────
+  // (x, y) = 발 위치. 보스는 2배 크기
+  function drawMob(g, x, y, kind, dir, step, t) {
+    const def = S.MOBS[kind];
+    const sc = def && def.boss ? 2 : 1;
+    g.save();
+    g.translate(x, y);
+    if (sc !== 1) g.scale(sc, sc);
+    if (dir === 'left') g.scale(-1, 1);
+    const R = (c, rx, ry, w, h) => { g.fillStyle = c; g.fillRect(rx, ry, w, h); };
+    const f = Math.floor((t || 0) / 180) % 2, b = step === -1 ? 0 : (f ? -1 : 0);
+    R('rgba(0,0,0,0.2)', -6, -1, 12, 2);
+    switch (kind) {
+      case 'slime': case 'king_slime': {
+        const c = kind === 'slime' ? '#7ed492' : '#6ec6ff', h = f ? 7 : 8;
+        R(c, -6, -h, 12, h); R(c, -4, -h - 2, 8, 2); R(shade(c, 0.4), -4, -h, 3, 2); R(shade(c, -0.25), -6, -1, 12, 1);
+        R('#2b2233', -3, -h + 3, 2, 2); R('#2b2233', 2, -h + 3, 2, 2); R('#ffffff', -3, -h + 3, 1, 1); R('#ffffff', 2, -h + 3, 1, 1);
+        if (kind === 'king_slime') { R('#ffd34d', -4, -h - 5, 8, 3); R('#ffd34d', -4, -h - 7, 1, 2); R('#ffd34d', -1, -h - 8, 2, 3); R('#ffd34d', 3, -h - 7, 1, 2); R('#e85d5d', -1, -h - 4, 2, 1); }
+        break;
+      }
+      case 'bat':
+        R('#4a3b5c', -2, -14 + b, 5, 5); R(f ? '#3b3740' : '#4a3b5c', -8, -15 + b + (f ? 2 : 0), 6, 3); R(f ? '#3b3740' : '#4a3b5c', 3, -15 + b + (f ? 2 : 0), 6, 3);
+        R('#ff5c5c', -1, -12 + b, 1, 1); R('#ff5c5c', 1, -12 + b, 1, 1); R('#ffffff', 0, -10 + b, 1, 1);
+        break;
+      case 'skeleton': case 'skeleton_knight': {
+        const bone = '#f2ede4', dk = '#3b3740';
+        R(bone, -1, -6, 1, 5); R(bone, 1, -6, 1, 5);
+        R(bone, -3, -12 + b, 6, 6); R(dk, -2, -11 + b, 1, 4); R(dk, 1, -11 + b, 1, 4); R(bone, -5, -11 + b, 1, 4); R(bone, 4, -11 + b, 1, 4);
+        R(bone, -3, -18 + b, 6, 6); R(dk, -2, -16 + b, 2, 2); R(dk, 1, -16 + b, 2, 2); R(dk, -1, -13 + b, 3, 1);
+        R('#9aa7b0', 5, -16 + b, 1, 8);
+        if (kind === 'skeleton_knight') { R('#6f6b78', -4, -19 + b, 8, 3); R('#e85d5d', -1, -21 + b, 2, 2); R('#6f6b78', -4, -12 + b, 8, 5); R('#c4ced6', 5, -20 + b, 2, 12); }
+        break;
+      }
+      case 'ghost':
+        R('rgba(201,242,255,0.85)', -5, -16 + b, 10, 12); R('rgba(201,242,255,0.85)', -4, -18 + b, 8, 2);
+        for (let i = 0; i < 3; i++) R('rgba(201,242,255,0.85)', -5 + i * 4, -4 + b + ((i + f) % 2), 2, 2);
+        R('#2b2233', -3, -14 + b, 2, 3); R('#2b2233', 1, -14 + b, 2, 3); R('#2b2233', -1, -9 + b, 2, 2);
+        break;
+      case 'golem':
+        R('#7a7380', -7, -16 + b, 14, 15); R('#938c9a', -6, -16 + b, 6, 3); R('#5c5562', -7, -2, 14, 1);
+        R('#7a7380', -10, -13 + b, 3, 8); R('#7a7380', 7, -13 + b, 3, 8); R('#7fdcff', -4, -12 + b, 2, 2); R('#7fdcff', 2, -12 + b, 2, 2);
+        R('#5c5562', -2, -8 + b, 4, 1); R('#b48cff', -1, -5 + b, 2, 2);
+        break;
+      case 'imp':
+        R('#e8502a', -3, -11 + b, 7, 8); R('#e8502a', -4, -16 + b, 8, 6); R('#8a2e1a', -4, -18 + b, 2, 2); R('#8a2e1a', 3, -18 + b, 2, 2);
+        R('#ffe066', -2, -14 + b, 1, 1); R('#ffe066', 2, -14 + b, 1, 1); R('#8a2e1a', -1, -12 + b, 3, 1);
+        R('#ffb02e', -8, -12 + b + (f ? 1 : 0), 4, 3); R('#ffb02e', 5, -12 + b + (f ? 1 : 0), 4, 3); R('#8a2e1a', 4, -6 + b, 4, 1);
+        break;
+      case 'dragon':
+        R('#c0392b', -9, -12 + b, 16, 9); R('#e74c3c', -8, -12 + b, 14, 2); R('#ffb36b', -6, -6 + b, 10, 2);
+        R('#c0392b', 5, -18 + b, 7, 7); R('#ffe066', 9, -16 + b, 1, 1); R('#8a2e1a', 11, -13 + b, 2, 1); R('#e8d3a8', 6, -20 + b, 1, 2); R('#e8d3a8', 9, -20 + b, 1, 2);
+        R('#8a2e1a', -6, -20 + b + (f ? 2 : 0), 8, 6); R('#a93226', -5, -19 + b + (f ? 2 : 0), 6, 4);
+        R('#c0392b', -13, -8 + b, 4, 3); R('#c0392b', -15, -10 + b, 3, 3);
+        R('#8a2e1a', -7, -3, 3, 3); R('#8a2e1a', 2, -3, 3, 3);
+        break;
+    }
+    g.restore();
+  }
+
+  window.DRAW = { shade, drawTile, drawItem, drawItemRot, drawTop, drawChar, drawAnimal, drawMob, drawGround, drawObject, drawAnim, hasAnim, lightOf, pen };
 })();

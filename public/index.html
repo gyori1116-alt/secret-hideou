@@ -166,6 +166,17 @@
     .chesthead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; flex-wrap: wrap; }
     .chesthead .btn { font-size: 12px; padding: 3px 8px; }
     .chestgrid .slot { background: #f6ead8; border-color: #b88252; }
+    .hpbox { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 0 4px; }
+    .hpbar { display: inline-block; width: 54px; height: 8px; border: 2px solid var(--ink); background: #eee3d5; }
+    .hpbar i { display: block; height: 100%; width: 100%; background: #e8364f; transition: width .2s; }
+    .slot .en { position: absolute; left: 2px; bottom: 0; font-size: 10px; color: #d4a017; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff; font-weight: bold; }
+    .equipgrid { display: grid; grid-template-columns: repeat(4, 56px); gap: 8px; justify-content: center; margin: 6px 0; }
+    .slot.eq { width: 56px; height: 56px; border-color: #9aa7b0; background: #f4f6f8; }
+    .slot.eq.empty { opacity: .6; }
+    .slot.eq .eqname { font-size: 11px; opacity: .7; }
+    .jobgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    @media (max-width: 560px) { .jobgrid { grid-template-columns: 1fr; } }
+    .jobcard { background: #fff; border: 3px solid #c9a0ff; padding: 10px; display: grid; gap: 6px; font-size: 13px; }
     .rw-unlocks { width: 100%; display: grid; gap: 6px; font-size: 13px; }
     .rw-unlocks div { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
     .newslist { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
@@ -221,7 +232,7 @@
       #top .btn { font-size: 13px; padding: 2px 6px; box-shadow: 1px 1px 0 var(--ink); border-width: 2px; }
       #top .btn small, #top .btn .lbl { display: none; }
       #coins { font-size: 12px; min-width: 0; padding: 0 4px; }
-      .lvbar { width: 30px; }
+      .lvbar { width: 30px; } .hpbar { width: 30px; } .hpbox { font-size: 11px; padding: 0; }
       #side { top: 6px; right: 6px; gap: 4px; }
       #mmWrap { padding: 2px; } #mmWrap .cap { display: none; }
       #who { min-width: 0; padding: 4px 6px; font-size: 11px; }
@@ -259,6 +270,7 @@
 
   <div id="top" class="panel hidden">
     <button id="lvBox" class="btn" data-open="level"><b id="lvText">Lv.1</b><span class="lvbar"><i id="lvBar"></i></span></button>
+    <span id="hpBox" class="hpbox"><b id="hpText">❤️ 100</b><span class="hpbar"><i id="hpBar"></i></span></span>
     <span id="coins">💰 0</span>
     <button class="btn" data-open="bag">🎒<span class="lbl"> 가방</span> <small>I</small></button>
     <button class="btn" data-open="avatar">👗<span class="lbl"> 꾸미기</span> <small>C</small></button>
@@ -334,8 +346,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=9"></script>
-  <script src="draw.js?v=9"></script>
-  <script src="client.js?v=9"></script>
+  <script src="shared.js?v=10"></script>
+  <script src="draw.js?v=10"></script>
+  <script src="client.js?v=10"></script>
 </body>
 </html>

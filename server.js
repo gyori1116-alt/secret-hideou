@@ -83,7 +83,8 @@ function spawnAnimal(a) {
 const isSolidAt = (px, py) => {
   const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
   if (!inMap(tx, ty)) return true;
-  return world.ground[ty][tx] === 'water' || S.isSolidObj(getO(tx, ty));
+  const gd = S.GROUND[world.ground[ty][tx]];
+  return !!(gd && gd.solid) || S.isSolidObj(getO(tx, ty));
 };
 const blockedAt = (x, y, r = 4) => isSolidAt(x - r, y - 3) || isSolidAt(x + r, y - 3) || isSolidAt(x - r, y) || isSolidAt(x + r, y);
 function animalAt(x, y) {
@@ -134,9 +135,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const DIRS = new Set(['up', 'down', 'left', 'right']);
 const lvOf = (pr) => S.levelInfo(pr.exp || 0).lv;
+// ⚔️ 전투 수치
+const maxOf = (p) => S.maxHp(lvOf(p.prof), p.prof.job);
+const defOf = (p) => S.armorDef(p.prof.equip, p.prof.job);
+const titleName = (pr) => { const t = S.TITLES.find((x) => x.id === pr.title); return t && t.id !== 'newbie' ? t.name : ''; };
+const eqOf = (pr) => { const e = {}; for (const [part, it] of Object.entries(pr.equip || {})) if (it && S.ITEMS[it.id]) e[part] = S.ITEMS[it.id].armor.tier; return e; };
 const isMvp = (k) => !!(board.lastMvp && Object.values(board.lastMvp.cats || {}).some((list) => list[0] && list[0].name.toLowerCase() === k));
 const pub = (p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, held: p.held, pose: p.pose,
-  lv: lvOf(p.prof), mvp: isMvp(p.key),
+  lv: lvOf(p.prof), mvp: isMvp(p.key), job: p.prof.job, title: titleName(p.prof), eq: eqOf(p.prof), hp: p.hp, maxHp: maxOf(p),
   fishing: p.fishing ? { x: p.fishing.x, y: p.fishing.y } : null });
 
 function pushChat(msg) {
@@ -172,7 +178,11 @@ function ensureProfile(pr) {
   }
   pr.stats.level = lvOf(pr);
   while (pr.inv.length < S.invSize(pr.stats.level)) pr.inv.push(null);
-  // 예전 "못 받은 보상" → 우편함
+  // v7 전투: 직업·장비·칭호
+  pr.job = S.JOBS[pr.job] ? pr.job : 'novice';
+  pr.equip = pr.equip || {};
+  pr.jobsDone = pr.jobsDone || [];
+  if (!pr.title || !S.TITLES.some((t) => t.id === pr.title)) pr.title = 'newbie';
   pr.mail = pr.mail || [];
   if (pr.recover && Object.keys(pr.recover).length) pr.mail.push({ title: '📮 예전에 가방이 꽉 차서 못 받은 보상', items: pr.recover });
   delete pr.recover;
@@ -223,7 +233,7 @@ function sendMe(p) {
   const per = S.periods(Date.now());
   p.socket.emit('me', {
     coins: pr.coins, inv: pr.inv, stats: pr.stats, claimed: pr.claimed, unlocked: pr.unlocked, avatar: pr.avatar,
-    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, mail: pr.mail, exp: pr.exp, wk: curWk(pr), ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
+    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, mail: pr.mail, exp: pr.exp, wk: curWk(pr), job: pr.job, jobQuest: pr.jobQuest || null, jobsDone: pr.jobsDone, equip: pr.equip, title: pr.title, hp: p.hp, maxHp: maxOf(p), def: defOf(p), ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
   });
   updateHeld(p);
   profilesDirty = true;
@@ -282,6 +292,8 @@ function addExp(p, n) {
   p.socket.emit('levelUp', { lv: after, unlocks });
   io.to(ROOM).emit('playerUpdate', { id: p.id, avatar: p.avatar, lv: after, mvp: isMvp(p.key) });
   sys(`🎉 ${p.name} 님이 레벨 ${after}(으)로 올랐어요!`);
+  p.hp = maxOf(p); // 레벨업하면 체력이 가득!
+  sendHp(p);
 }
 // 보상 주기 + 받은 것 화면에 보여주기
 function grant(p, title, rw) {
@@ -362,7 +374,7 @@ function moveStack(fromArr, slot, toArr) {
   const it = fromArr[slot];
   if (!it) return 0;
   // 이름이 있는 펫은 이름째로 빈 칸에 옮겨요
-  if (it.pname) {
+  if (it.pname || it.en) {
     const i = toArr.findIndex((s) => !s);
     if (i < 0) return 0;
     toArr[i] = it; fromArr[slot] = null;
@@ -513,7 +525,7 @@ function handleAct(p, type, x, y, slot, rot) {
   const g = world.ground[y][x];
   const o = getO(x, y);
   const od = (o && S.OBJ[o.t]) || {};
-  const an = animalAt(x, y);
+  const an = o && (o.t === 'dungeon_gate' || o.t === 'dungeon_exit') ? null : animalAt(x, y); // 던전 문은 펫보다 먼저
   if (an) {
     const it = p.prof.inv[slot];
     const usable = type !== 'use' || (it && (S.FEED.includes(it.id) || S.ITEMS[it.id].tool === 'bow')) || S.ANIMALS[an.kind].pet && !it;
@@ -555,6 +567,12 @@ function handleAct(p, type, x, y, slot, rot) {
         for (const [id, chance] of od.bonus || []) if (rand() < chance) { give(p, id, 1); stat(p, id, 1); }
       }
       if (od.item) give(p, od.item, 1, true);
+      // 🌳 숲 밖의 나무: 다시 자라지 않고 2번 베면 사라져요
+      if ((o.t === 'tree' || o.t === 'pine') && S.zoneAt(x, y) !== 'forest') {
+        if (!o.hits) { setTile(x, y, undefined, Object.assign({}, o, { hits: 1 })); return '🪓 한 번 더 베면 사라져요 (숲 밖의 나무는 다시 자라지 않아요)'; }
+        setTile(x, y, undefined, null);
+        return null;
+      }
       setTile(x, y, undefined, od.regrow ? { t: od.regrow, at: Date.now() + od.regrowMs, back: o.t } : null);
       return null;
     }
@@ -606,6 +624,18 @@ function handleAct(p, type, x, y, slot, rot) {
     if (td && td.fx) { io.to(ROOM).emit('fx', { x: x * TILE + 8, y: y * TILE, text: td.fx }); return null; }
     if (td && td.msg) return td.msg;
     if (o.t === 'notice_board') { openBoard(p); return null; }
+    // ⚔️ 던전 입구·출구
+    if (o.t === 'dungeon_gate') {
+      const d = S.DUNGEONS[(o.star || 1) - 1];
+      if (lvOf(p.prof) < d.lv) return `🔒 레벨 ${d.lv}부터 들어갈 수 있어요 (지금 Lv.${lvOf(p.prof)})`;
+      teleport(p, d.inside.x * TILE + 8, d.inside.y * TILE + 12);
+      return `${d.name}에 들어왔어요! ⚔️ 나갈 땐 보라색 출구에서 E`;
+    }
+    if (o.t === 'dungeon_exit') {
+      const d = S.DUNGEONS[(o.star || 1) - 1];
+      teleport(p, d.outside.x * TILE + 8, d.outside.y * TILE + 12);
+      return '던전에서 나왔어요';
+    }
     if (od.msg) return od.msg === 'time' ? `🕰️ 지금은 ${kstTime()} 이에요` : od.msg;
     return null;
   }
@@ -617,12 +647,23 @@ function handleAct(p, type, x, y, slot, rot) {
     if (!def) return null;
     const take = () => { it.n -= 1; if (it.n <= 0) p.prof.inv[slot] = null; };
 
+    if (def.weapon) return null; // 무기는 공격(attack)으로
+    if (def.armor) return '🛡️ 갑옷은 가방(I)에서 눌러서 장착해요';
+    if (def.heal) {
+      if (p.hp >= maxOf(p)) return '체력이 가득해요 ❤️';
+      take();
+      healPlayer(p, def.heal);
+      io.to(ROOM).emit('fx', { x: p.x, y: p.y - 28, text: '💖' });
+      return `${def.name}을 마셨어요! ❤️ +${def.heal}`;
+    }
     if (def.food) {
       take();
       stat(p, 'eat');
+      const heal = Math.round((def.sell || 40) * 0.6) + 10;
+      healPlayer(p, heal);
       p.socket.emit('buff', { ms: S.FOOD_BUFF_MS });
       io.to(ROOM).emit('fx', { x: p.x, y: p.y - 28, text: '😋' });
-      return `냠냠! ${j(def.name, '을', '를')} 먹었어요. 잠깐 빨라져요 💨`;
+      return `냠냠! ${j(def.name, '을', '를')} 먹었어요. ❤️ +${heal}, 잠깐 빨라져요 💨`;
     }
     if (def.tool === 'hoe') {
       // 물만 빼고 어디든 밭으로! 바닥 블록(나무 바닥·길 등)은 가방으로 돌아와요
@@ -718,6 +759,191 @@ function handleAct(p, type, x, y, slot, rot) {
   return null;
 }
 
+// ───────── ⚔️ 전투: 체력 · 몬스터 · 던전 ─────────
+const mobs = new Map();
+const mobSlots = [];        // 몬스터가 나오는 자리 (죽으면 시간이 지나 다시 나와요)
+let nextMobId = 1, mobsDirty = false;
+const inDungeon = (p) => p.y < S.TY * TILE;
+function teleport(p, x, y) {
+  if (p.pose) setPose(p, null);
+  endFishing(p, null);
+  p.x = x; p.y = y;
+  p.socket.emit('teleport', { x, y });
+  stateDirty = true;
+}
+function sendHp(p) {
+  if (!p || !p.socket) return;
+  p.socket.emit('hp', { hp: p.hp, max: maxOf(p), def: defOf(p) });
+  io.to(ROOM).emit('php', { id: p.id, hp: p.hp, max: maxOf(p) });
+}
+function healPlayer(p, n) { p.hp = Math.min(maxOf(p), p.hp + n); sendHp(p); }
+function hurtPlayer(p, atk, src) {
+  if (!p || p.hp <= 0 || Date.now() < (p.safeUntil || 0)) return;
+  const dmg = S.dmgTaken(atk, defOf(p));
+  p.hp -= dmg; p.lastHit = Date.now();
+  io.to(ROOM).emit('dmg', { x: p.x, y: p.y - 24, v: dmg, player: 1 });
+  if (p.hp <= 0) {
+    p.hp = maxOf(p);
+    stat(p, 'deaths');
+    for (const m of mobs.values()) if (m.target === p.id) m.target = null;
+    teleport(p, S.SPAWN.x, S.SPAWN.y);
+    p.safeUntil = Date.now() + 3000;
+    toast(p.socket, `💫 ${src}에게 쓰러졌어요... 마을에서 다시 시작해요 (잃은 건 없어요)`);
+  }
+  sendHp(p);
+}
+function initMobSlots() {
+  for (const d of S.DUNGEONS) {
+    const open = [];
+    for (let y = d.boss.y + 5; y < d.gate.y - 4; y++) for (let x = d.x0 + 1; x < d.x1; x++) if (world.ground[y][x] === 'dungeon' && !getO(x, y)) open.push([x, y]);
+    for (const [kind, m] of Object.entries(S.MOBS)) {
+      if (m.star !== d.star) continue;
+      if (m.boss) { mobSlots.push({ kind, x: d.boss.x * TILE + 8, y: d.boss.y * TILE + 12, dead: 0 }); continue; }
+      for (let i = 0; i < m.n && open.length; i++) {
+        const [x, y] = open.splice(Math.floor(rand() * open.length), 1)[0];
+        mobSlots.push({ kind, x: x * TILE + 8, y: y * TILE + 12, dead: 0 });
+      }
+    }
+  }
+}
+function spawnMob(slot) {
+  const def = S.MOBS[slot.kind];
+  const m = { id: 'm' + nextMobId++, kind: slot.kind, x: slot.x, y: slot.y, hp: def.hp, max: def.hp, dir: 'right', moving: false, target: null,
+    atkAt: 0, hurtAt: 0, stompAt: Date.now() + 4000, slot, dmg: {}, names: {}, nextThink: 0, wx: slot.x, wy: slot.y };
+  slot.mob = m.id;
+  mobs.set(m.id, m);
+  mobsDirty = true;
+}
+const pubMob = (m) => [m.id, m.kind, Math.round(m.x), Math.round(m.y), m.dir === 'left' ? 1 : 0, m.moving ? 1 : 0, Math.max(0, Math.ceil(m.hp / m.max * 100)), Date.now() - m.hurtAt < 250 ? 1 : 0];
+function hitMob(p, m, raw, crit) {
+  if (!mobs.has(m.id)) return;
+  const def = S.MOBS[m.kind];
+  const dmg = Math.max(1, Math.round(raw - def.def));
+  m.hp -= dmg; m.hurtAt = Date.now(); m.target = p.id; mobsDirty = true;
+  m.dmg[p.key] = (m.dmg[p.key] || 0) + dmg; m.names[p.key] = p.name;
+  io.to(ROOM).emit('dmg', { x: m.x, y: m.y - (def.boss ? 42 : 22), v: dmg, crit: !!crit });
+  if (m.hp <= 0) killMob(m, p);
+}
+const rollRange = ([a, b]) => a + Math.floor(rand() * (b - a + 1));
+// 보상 주기: 접속 중이고 가방에 들어가면 보상창, 아니면 📮 우편함
+function rewardTo(key, title, rw) {
+  const q = Object.values(players).find((x) => x.key === key), pr = profiles[key];
+  if (!pr) return;
+  if (q && S.canFit(pr.inv, rw.items || {})) { grant(q, title, rw); sendMe(q); return; }
+  pr.mail = pr.mail || [];
+  pr.mail.push(Object.assign({ title }, rw));
+  profilesDirty = true;
+  if (q) { toast(q.socket, '🎒 가방이 꽉 차서 보상을 📮 우편함(퀘스트 창)에 넣었어요'); sendMe(q); }
+}
+function killMob(m, killer) {
+  const def = S.MOBS[m.kind];
+  mobs.delete(m.id); mobsDirty = true;
+  m.slot.mob = null; m.slot.dead = Date.now() + (def.boss ? S.BOSS_RESPAWN : S.MOB_RESPAWN);
+  io.to(ROOM).emit('fx', { x: m.x, y: m.y - 16, text: def.boss ? '🎉' : '💥' });
+  if (!def.boss) {
+    const coins = rollRange(def.coins);
+    killer.prof.coins += coins;
+    addExp(killer, def.exp);
+    stat(killer, 'kill'); stat(killer, 'kill_' + m.kind);
+    const got = [];
+    for (const [id, chance, n] of def.drops || []) {
+      if (rand() >= chance) continue;
+      if (S.canFit(killer.prof.inv, { [id]: n })) { give(killer, id, n); got.push(`${S.ITEMS[id].name} ${n}`); }
+      else toast(killer.socket, `🎒 가방이 꽉 차서 ${S.ITEMS[id].name}을(를) 못 주웠어요`);
+    }
+    toast(killer.socket, `${def.name} 처치! ⭐+${def.exp} 💰+${coins}${got.length ? ' · ' + got.join(', ') : ''}`);
+    sendMe(killer);
+    return;
+  }
+  // 👑 보스: 가장 많이 때린 순서대로 1~3등만 보상 + 채팅에 딜량 순위
+  const total = Object.values(m.dmg).reduce((s, v) => s + v, 0) || 1;
+  const rank = Object.entries(m.dmg).sort((a, b) => b[1] - a[1]);
+  const medal = ['🥇', '🥈', '🥉'];
+  const pct = (v) => Math.round(v / total * 100);
+  sys(`🏆 ${def.name} 처치! 딜량 순위 — ${rank.slice(0, 3).map(([k, v], i) => `${medal[i]} ${m.names[k]} ${v.toLocaleString()} (${pct(v)}%)`).join(' · ')}`
+    + `${rank.length > 3 ? ` · 그 외 ${rank.length - 3}명` : ''} · 총 피해 ${total.toLocaleString()}`);
+  for (const [k] of rank) { const pr = profiles[k]; if (pr) pr.stats['boss' + def.star] = (pr.stats['boss' + def.star] || 0) + 1; }
+  rank.slice(0, 3).forEach(([k, v], i) => {
+    const share = S.BOSS_SHARE[i];
+    const rw = { coins: Math.round(rollRange(def.coins) * share), exp: Math.round(def.exp * share), items: {} };
+    for (const [id, n] of Object.entries(def.loot || {})) rw.items[id] = Math.max(1, Math.ceil(n * share));
+    const rc = S.BOSS_RARE[def.star];
+    if (def.rare && rc && rand() < rc[i]) {
+      const w = def.rare[Math.floor(rand() * def.rare.length)];
+      rw.items[w] = (rw.items[w] || 0) + 1;
+      sys(`✨ ${m.names[k]} 님이 ${def.name}에게서 ${S.ITEMS[w].name}을(를) 얻었어요!`);
+    }
+    if (i === 0 && profiles[k]) profiles[k].stats.bossTop1 = (profiles[k].stats.bossTop1 || 0) + 1;
+    rewardTo(k, `🏆 ${def.name} 딜량 ${i + 1}등 보상 · 입힌 피해 ${v.toLocaleString()} (${pct(v)}%)`, rw);
+  });
+  for (const [k] of rank.slice(3)) { const q = Object.values(players).find((x) => x.key === k); if (q) toast(q.socket, `${def.name} 처치에 참여했어요! (보상은 딜량 1~3등만)`); }
+  profilesDirty = true;
+}
+// 공격: 들고 있는 무기 종류에 따라 (검: 앞쪽 여러 명 / 활: 화살 / 지팡이: 터지는 마법 / 닌자: 빠른 한 명 + 치명타)
+function doAttack(p, ax, ay) {
+  const pr = p.prof, now = Date.now();
+  const it = pr.inv[p.sel | 0], def = it && S.ITEMS[it.id];
+  if (!def || !def.weapon) return;
+  if (def.cls && pr.job !== def.cls) return toast(p.socket, `${S.JOBS[def.cls].icon} ${S.JOBS[def.cls].name}만 쓸 수 있어요 (Lv.${S.JOB_LV}부터 마을 전직 교관)`);
+  const W = S.WEAPONS[def.weapon], job = S.JOBS[pr.job] || {};
+  const mine = job.weapon === def.weapon;
+  const cd = W.cd * (mine && job.speed ? job.speed : 1);
+  if (now - (p.lastAtk || 0) < cd - 40) return;
+  p.lastAtk = now;
+  let len = Math.hypot(ax, ay);
+  if (!isNum(ax) || !isNum(ay) || len < 0.01) { const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[p.dir] || [0, 1]; ax = v[0]; ay = v[1]; len = 1; }
+  ax /= len; ay /= len;
+  let dmg = S.weaponAtk(it) + Math.floor(lvOf(pr) / 2);
+  if (mine) dmg = Math.round(dmg * 1.15);
+  let crit = false;
+  if (def.weapon === 'ninja' && rand() < (job.crit || 0.1)) { crit = true; dmg *= 2; }
+  const x0 = p.x, y0 = p.y - 8;
+  const wild = [...animals.values()].filter((a) => S.ANIMALS[a.kind].wild);
+  const animalHit = (a) => { const msg = hurtAnimal(p, a, Math.max(1, Math.round(dmg / 6))); if (msg) toast(p.socket, msg); };
+  if (def.weapon === 'sword' || def.weapon === 'ninja') {
+    const range = W.range, cone = def.weapon === 'sword' ? 0.15 : 0.45;
+    const inFront = (tx, ty) => { const dx = tx - x0, dy = ty - y0, d = Math.hypot(dx, dy); return d <= range && (d < 6 || (dx * ax + dy * ay) / d > cone); };
+    const hitsM = [...mobs.values()].filter((m) => inFront(m.x, m.y - (S.MOBS[m.kind].boss ? 14 : 6)));
+    const hitsA = wild.filter((a) => inFront(a.x, a.y - 6));
+    io.to(ROOM).emit('slash', { id: p.id, x: x0, y: y0, ax, ay, kind: def.weapon });
+    if (def.weapon === 'sword') { hitsM.slice(0, 4).forEach((m) => hitMob(p, m, dmg, crit)); hitsA.slice(0, 2).forEach(animalHit); }
+    else {
+      const all = hitsM.map((m) => [m, Math.hypot(m.x - x0, m.y - y0)]).sort((a, b) => a[1] - b[1]);
+      if (all.length) hitMob(p, all[0][0], dmg, crit); else if (hitsA.length) animalHit(hitsA[0]);
+    }
+  } else {
+    // 활·지팡이: 앞으로 날아가다 처음 만난 적
+    const range = W.range + (mine && def.weapon === 'bow' ? 2 * TILE : 0);
+    let x1 = x0, y1 = y0, hitM = null, hitA = null;
+    for (let d = 6; d <= range; d += 3) {
+      const px = x0 + ax * d, py = y0 + ay * d;
+      const tx = Math.floor(px / TILE), ty = Math.floor((py + 8) / TILE);
+      if (!inMap(tx, ty) || S.isSolidObj(getO(tx, ty))) break;
+      x1 = px; y1 = py;
+      for (const m of mobs.values()) if (Math.hypot(m.x - px, m.y - (S.MOBS[m.kind].boss ? 14 : 6) - py) < (S.MOBS[m.kind].boss ? 16 : 9)) { hitM = m; break; }
+      if (hitM) break;
+      for (const a of wild) if (Math.hypot(a.x - px, a.y - 5 - py) < 9) { hitA = a; break; }
+      if (hitA) break;
+    }
+    io.to(ROOM).emit('arrow', { x0, y0, x1, y1, magic: def.weapon === 'staff' ? 1 : 0 });
+    if (def.weapon === 'staff') {
+      io.to(ROOM).emit('fx', { x: x1, y: y1, text: '✨' });
+      for (const m of [...mobs.values()]) if (Math.hypot(m.x - x1, m.y - 6 - y1) < (hitM ? W.splash + 6 : W.splash)) hitMob(p, m, m === hitM ? dmg : Math.round(dmg * 0.6), crit);
+      if (!hitM && hitA) animalHit(hitA);
+    } else {
+      if (hitM || hitA) stat(p, 'bowHit');
+      if (hitM) hitMob(p, hitM, dmg, crit); else if (hitA) animalHit(hitA);
+    }
+  }
+  sendMe(p);
+}
+// 대장간(모루) 근처인지
+function nearAnvil(p) {
+  const fx = Math.floor(p.x / TILE), fy = Math.floor(p.y / TILE);
+  for (let y = fy - 3; y <= fy + 3; y++) for (let x = fx - 3; x <= fx + 3; x++) { const o = inMap(x, y) && getO(x, y); if (o && o.t === 'anvil') return true; }
+  return false;
+}
+
 // ───────── 낚시 ─────────
 function endFishing(p, result) {
   if (!p.fishing) return;
@@ -790,7 +1016,7 @@ io.on('connection', (socket) => {
     let prof = profiles[k];
     const isNew = !prof;
     if (!prof) {
-      prof = profiles[k] = { name, coins: 100, inv: S.starterInventory(), stats: {}, claimed: [], unlocked: S.FREE_ACC.slice(), avatar: S.defaultAvatar(rand), x: null, y: null };
+      prof = profiles[k] = { name, coins: 100, inv: S.starterInventory(), stats: {}, claimed: [], unlocked: S.FREE_ACC.slice(), avatar: S.defaultAvatar(rand), x: null, y: null, mapV: 7 };
     }
     ensureProfile(prof);
     refreshPQ(prof);
@@ -800,10 +1026,13 @@ io.on('connection', (socket) => {
 
     const p = players[socket.id] = { id: socket.id, name: prof.name, key: k, x, y, dir: 'down', moving: false, avatar: prof.avatar, fishing: null, prof, socket,
       sel: 0, held: prof.inv[0] ? prof.inv[0].id : null, pose: null, trade: null, tradeAsk: null };
+    p.hp = maxOf(p); p.lastHit = 0; p.lastAtk = 0;
+    // 던전 안에서 나갔으면 마을에서 시작 (던전 앞마당은 그대로)
+    if (S.DUNGEONS.some((q) => p.x >= q.x0 * TILE && p.x < (q.x1 + 1) * TILE && p.y < (q.gate.y + 1) * TILE)) { p.x = S.SPAWN.x; p.y = S.SPAWN.y; }
     socket.join(ROOM);
     const ps = {};
     for (const q of Object.values(players)) ps[q.id] = pub(q);
-    socket.emit('init', { id: socket.id, players: ps, chatLog, world: serializeWorld(), animals: [...animals.values()].map(pubAnimal) });
+    socket.emit('init', { id: socket.id, players: ps, chatLog, world: serializeWorld(), animals: [...animals.values()].map(pubAnimal), mobs: [...mobs.values()].map(pubMob) });
     sendMe(p);
     socket.to(ROOM).emit('playerJoined', pub(p));
     if (!data.rejoin) sys(isNew ? `${prof.name} 님이 처음으로 놀러 왔어요! 🎉` : `${prof.name} 님이 들어왔어요 🏠`);
@@ -815,8 +1044,12 @@ io.on('connection', (socket) => {
     if (!p || !isNum(d.x) || !isNum(d.y)) return;
     if (p.pose && d.moving) setPose(p, null);
     if (p.pose) return;
-    p.x = clamp(d.x, 0, W * TILE);
-    p.y = clamp(d.y, 0, H * TILE);
+    const nx = clamp(d.x, 0, W * TILE), ny = clamp(d.y, 0, H * TILE);
+    // 던전 안으로는 문(E)으로만: 레벨이 모자라거나 갑자기 멀리서 들어오면 밖으로
+    const dg = S.DUNGEONS.find((q) => nx >= q.x0 * TILE && nx < (q.x1 + 1) * TILE && ny < (q.gate.y + 1) * TILE);
+    if (dg && (lvOf(p.prof) < dg.lv || Math.hypot(nx - p.x, ny - p.y) > TILE * 6)) { teleport(p, dg.outside.x * TILE + 8, dg.outside.y * TILE + 12); return; }
+    p.x = nx;
+    p.y = ny;
     if (DIRS.has(d.dir)) p.dir = d.dir;
     p.moving = !!d.moving;
     stateDirty = true;
@@ -1151,7 +1384,7 @@ io.on('connection', (socket) => {
     if (!p) return;
     p.prof.avatar = p.avatar = S.sanitizeAvatar(av, p.prof.unlocked);
     p.prof.stats.avatar = (p.prof.stats.avatar || 0) + 1;
-    io.to(ROOM).emit('playerUpdate', { id: p.id, avatar: p.avatar });
+    io.to(ROOM).emit('playerUpdate', { id: p.id, avatar: p.avatar, eq: eqOf(p.prof) });
     toast(socket, '새 모습 저장 완료! ✨');
     sendMe(p);
   });
@@ -1203,34 +1436,113 @@ io.on('connection', (socket) => {
 
   socket.on('fishCancel', () => { const p = me(); if (p) endFishing(p, null); });
 
-  let lastShot = 0;
-  socket.on('shoot', ({ ax, ay } = {}) => {
+  // ⚔️ 공격 (예전 'shoot'도 같은 공격으로)
+  socket.on('attack', ({ ax, ay } = {}) => { const p = me(); if (p) doAttack(p, ax, ay); });
+  socket.on('shoot', ({ ax, ay } = {}) => { const p = me(); if (p) doAttack(p, ax, ay); });
+
+  // 🛡️ 갑옷 장착 / 벗기
+  socket.on('equip', ({ slot } = {}) => {
     const p = me();
-    const now = Date.now();
-    if (!p || now - lastShot < 500 || !isNum(ax) || !isNum(ay)) return;
-    if (!S.countItem(p.prof.inv, 'bow')) return;
-    const len = Math.hypot(ax, ay);
-    if (len < 0.01) return;
-    lastShot = now;
-    ax /= len; ay /= len;
-    const x0 = p.x, y0 = p.y - 8;
-    let x1 = x0, y1 = y0, hit = null;
-    for (let d = 6; d <= S.BOW_RANGE; d += 3) {
-      const px = x0 + ax * d, py = y0 + ay * d;
-      const tx = Math.floor(px / TILE), ty = Math.floor((py + 8) / TILE);
-      if (!inMap(tx, ty) || S.isSolidObj(getO(tx, ty))) break;
-      x1 = px; y1 = py;
-      for (const a of animals.values()) {
-        if (S.ANIMALS[a.kind].wild && Math.hypot(a.x - px, a.y - 5 - py) < 9) { hit = a; break; }
-      }
-      if (hit) break;
+    if (!p || !Number.isInteger(slot)) return;
+    const pr = p.prof, it = pr.inv[slot], def = it && S.ITEMS[it.id];
+    if (!def || !def.armor) return;
+    const part = def.armor.part;
+    pr.inv[slot] = pr.equip[part] || null;
+    pr.equip[part] = it;
+    pr.stats.armorParts = Math.max(pr.stats.armorParts || 0, Object.values(pr.equip).filter(Boolean).length);
+    toast(socket, `🛡️ ${def.name} 장착! 방어력 ${defOf(p)}`);
+    io.to(ROOM).emit('playerUpdate', { id: p.id, eq: eqOf(pr) });
+    sendHp(p); sendMe(p);
+  });
+  socket.on('unequip', ({ part } = {}) => {
+    const p = me();
+    if (!p || !p.prof.equip[part]) return;
+    const i = p.prof.inv.findIndex((s) => !s);
+    if (i < 0) return toast(socket, '🎒 가방에 빈칸이 있어야 벗을 수 있어요');
+    p.prof.inv[i] = p.prof.equip[part];
+    delete p.prof.equip[part];
+    io.to(ROOM).emit('playerUpdate', { id: p.id, eq: eqOf(p.prof) });
+    sendHp(p); sendMe(p);
+  });
+
+  // 🔨 무기 강화 (대장간 모루 근처에서)
+  socket.on('enhance', ({ slot } = {}) => {
+    const p = me();
+    if (!p || !Number.isInteger(slot)) return;
+    const pr = p.prof, it = pr.inv[slot], def = it && S.ITEMS[it.id];
+    if (!def || !def.weapon) return;
+    if (!nearAnvil(p)) return toast(socket, '마을 대장간(모루) 앞에서 강화해요 🔨');
+    const en = it.en || 0;
+    if (en >= S.MAX_EN) return toast(socket, '이미 최고 강화(+10)예요!');
+    const c = S.ENHANCE[en];
+    if (pr.coins < c.coins) return toast(socket, '코인이 부족해요 💰');
+    for (const [id, n] of Object.entries(c.need)) if (S.countItem(pr.inv, id) < n) return toast(socket, `재료가 부족해요 (${S.ITEMS[id].name} ${n}개)`);
+    pr.coins -= c.coins;
+    for (const [id, n] of Object.entries(c.need)) S.removeItem(pr.inv, id, n);
+    stat(p, 'enhanceTry');
+    if (rand() < c.rate) {
+      it.en = en + 1;
+      pr.stats.enMax = Math.max(pr.stats.enMax || 0, it.en);
+      io.to(ROOM).emit('fx', { x: p.x, y: p.y - 30, text: '✨' });
+      p.socket.emit('enhanceResult', { ok: true, label: S.itemLabel(it) });
+      if (it.en >= 7) sys(`🔨 ${p.name} 님이 ${S.itemLabel(it)} 강화에 성공했어요! ✨`);
+    } else {
+      p.socket.emit('enhanceResult', { ok: false, label: S.itemLabel(it) });
     }
-    io.to(ROOM).emit('arrow', { x0, y0, x1, y1 });
-    if (hit) {
-      const msg = hurtAnimal(p, hit, 1);
-      toast(socket, msg || `명중! 🎯 (${S.ANIMALS[hit.kind].name})`);
-      sendMe(p);
-    }
+    sendMe(p);
+  });
+
+  // 🧭 전직: 퀘스트 시작 → 다 깨면 전직
+  socket.on('jobStart', ({ cls } = {}) => {
+    const p = me();
+    const J = S.JOBS[cls];
+    if (!p || !J || cls === 'novice' || !J.quest) return;
+    const pr = p.prof;
+    if (pr.job !== 'novice') return toast(socket, '이미 전직했어요');
+    if (lvOf(pr) < S.JOB_LV) return toast(socket, `레벨 ${S.JOB_LV}부터 전직할 수 있어요`);
+    const base = {};
+    for (const q of J.quest) base[q.stat] = pr.stats[q.stat] || 0;
+    pr.jobQuest = { cls, base };
+    toast(socket, `${J.icon} ${J.name} 전직 퀘스트를 시작했어요! (퀘스트를 다 깨고 교관에게 오세요)`);
+    sendMe(p);
+  });
+  socket.on('jobCancel', () => { const p = me(); if (p) { p.prof.jobQuest = null; sendMe(p); } });
+  socket.on('jobComplete', () => {
+    const p = me();
+    const pr = p && p.prof, jq = pr && pr.jobQuest, J = jq && S.JOBS[jq.cls];
+    if (!J) return;
+    if (!J.quest.every((q) => (pr.stats[q.stat] || 0) - (jq.base[q.stat] || 0) >= q.n)) return toast(socket, '아직 전직 퀘스트를 다 못 깼어요');
+    if (!room(p, J.reward)) return;
+    pr.job = jq.cls; pr.jobQuest = null;
+    if (!pr.jobsDone.includes(jq.cls)) pr.jobsDone.push(jq.cls);
+    pr.title = jq.cls;
+    stat(p, 'jobChanged');
+    grant(p, `${J.icon} ${J.name}(으)로 전직했어요!`, { items: J.reward, exp: 300 });
+    sys(`${J.icon} ${p.name} 님이 ${J.name}(으)로 전직했어요! 🎉`);
+    io.to(ROOM).emit('playerUpdate', { id: p.id, job: pr.job, title: titleName(pr) });
+    p.hp = maxOf(p); sendHp(p); sendMe(p);
+  });
+  socket.on('jobReset', () => {
+    const p = me();
+    const pr = p && p.prof;
+    if (!pr || pr.job === 'novice') return;
+    if (pr.coins < S.JOB_RESET_COST) return toast(socket, `코인 ${S.JOB_RESET_COST}이 필요해요`);
+    pr.coins -= S.JOB_RESET_COST;
+    pr.job = 'novice';
+    toast(socket, '모험가로 돌아왔어요. 다른 직업으로 다시 전직할 수 있어요');
+    io.to(ROOM).emit('playerUpdate', { id: p.id, job: pr.job });
+    p.hp = Math.min(p.hp, maxOf(p)); sendHp(p); sendMe(p);
+  });
+
+  // 🏷️ 칭호 고르기
+  socket.on('setTitle', ({ id } = {}) => {
+    const p = me();
+    const t = S.TITLES.find((x) => x.id === id);
+    if (!p || !t || !S.titleOk(p.prof, t)) return;
+    p.prof.title = id;
+    io.to(ROOM).emit('playerUpdate', { id: p.id, title: titleName(p.prof) });
+    toast(socket, `🏷️ 칭호 "${t.name}"을(를) 달았어요`);
+    sendMe(p);
   });
 
   // 거래: 신청 → 수락 → 서로 물건·코인 올리기 → 둘 다 확인하면 바꿔요
@@ -1261,6 +1573,7 @@ io.on('connection', (socket) => {
     if (items && typeof items === 'object') {
       for (const [id, n] of Object.entries(items).slice(0, 12)) {
         const c = Number.isInteger(n) ? Math.min(n, S.countItem(p.prof.inv, id)) : 0;
+        if (S.ITEMS[id] && (S.ITEMS[id].weapon || S.ITEMS[id].armor) && p.prof.inv.some((s) => s && s.id === id && s.en)) { toast(socket, '강화된 무기는 거래할 수 없어요'); continue; }
         if (S.canTrade(id) && c > 0) clean[id] = c;
       }
     }
@@ -1342,10 +1655,9 @@ let lastWildSpawn = 0;
 function randomSpawnTile(kind) {
   for (let i = 0; i < 40; i++) {
     let x, y;
-    // 사슴·멧돼지: 아래쪽 나무꾼의 숲 (멧돼지는 가끔 마을 왼쪽 위 숲에도)
-    if (kind === 'deer' || (kind === 'boar' && rand() < 0.6)) { x = S.BX + 2 + Math.floor(rand() * (W - S.BX - 5)); y = S.CY + 3 + Math.floor(rand() * (H - S.CY - 6)); }
-    else if (kind === 'boar') { x = 3 + Math.floor(rand() * 16); y = 3 + Math.floor(rand() * 16); }
-    else { x = 3 + Math.floor(rand() * (W - 6)); y = 3 + Math.floor(rand() * (S.CY - 6)); }
+    // 사슴·멧돼지: 맨 아래 숲 / 토끼: 마을·집 짓는 땅의 풀밭 (던전 지대 밖)
+    if (kind === 'deer' || kind === 'boar') { x = 3 + Math.floor(rand() * (W - 6)); y = S.CY + 3 + Math.floor(rand() * (H - S.CY - 6)); if (S.zoneAt(x, y) !== 'forest') continue; }
+    else { x = 3 + Math.floor(rand() * (W - 6)); y = S.TY + 2 + Math.floor(rand() * (S.CY - S.TY - 5)); }
     const g = world.ground[y][x];
     if ((g !== 'grass' && g !== 'forest') || getO(x, y)) continue;
     const px = x * TILE + 8, py = y * TILE + 12;
@@ -1422,6 +1734,70 @@ setInterval(() => {
   }
 }, 100);
 
+// ⚔️ 몬스터 움직임·공격 (초당 10번)
+setInterval(() => {
+  if (!world || !mobSlots.length) return;
+  const now = Date.now(), dt = 0.1;
+  for (const s of mobSlots) if (!s.mob && now >= s.dead) spawnMob(s);
+  const plist = Object.values(players).filter((p) => p.hp > 0 && inDungeon(p));
+  for (const m of mobs.values()) {
+    const def = S.MOBS[m.kind];
+    const homeD = Math.hypot(m.x - m.slot.x, m.y - m.slot.y);
+    let t = m.target && players[m.target];
+    if (t && (!inDungeon(t) || t.hp <= 0 || S.dungeonStar(t.x / TILE) !== def.star || Math.hypot(t.x - m.x, t.y - m.y) > TILE * 12 || homeD > TILE * 14)) t = null;
+    if (!t) {
+      let bd = TILE * (def.boss ? 9 : 6);
+      for (const p of plist) {
+        if (S.dungeonStar(p.x / TILE) !== def.star) continue;
+        const d = Math.hypot(p.x - m.x, p.y - m.y);
+        if (d < bd) { bd = d; t = p; }
+      }
+    }
+    m.target = t ? t.id : null;
+    const reach = def.boss ? 28 : 14;
+    let tx = m.x, ty = m.y, speed = def.speed;
+    if (t) {
+      const d = Math.hypot(t.x - m.x, t.y - m.y);
+      if (d > reach) { tx = t.x; ty = t.y; }
+      else if (now - m.atkAt > (def.boss ? 1500 : 1200)) { m.atkAt = now; hurtPlayer(t, def.atk, def.name); }
+      if (def.boss && now >= m.stompAt) {
+        m.stompAt = now + 6000;
+        io.to(ROOM).emit('fx', { x: m.x, y: m.y - 10, text: '💥' });
+        for (const p of plist) if (Math.hypot(p.x - m.x, p.y - m.y) < 60) hurtPlayer(p, Math.round(def.atk * 0.7), def.name);
+      }
+    } else if (homeD > TILE * 3) { tx = m.slot.x; ty = m.slot.y; }
+    else {
+      if (now >= m.nextThink) { m.nextThink = now + 2000 + rand() * 3000; m.wx = m.slot.x + (rand() * 2 - 1) * 28; m.wy = m.slot.y + (rand() * 2 - 1) * 28; }
+      tx = m.wx; ty = m.wy; speed *= 0.5;
+    }
+    const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+    const was = m.moving;
+    if (d > 1) {
+      const step = Math.min(d, speed * dt);
+      const nx = m.x + (dx / d) * step, ny = m.y + (dy / d) * step;
+      let moved = false;
+      if (!blockedAt(nx, m.y, 5)) { m.x = nx; moved = true; }
+      if (!blockedAt(m.x, ny, 5)) { m.y = ny; moved = true; }
+      if (!moved) { m.wx = m.x; m.wy = m.y; }
+      if (Math.abs(dx) > 0.5) m.dir = dx < 0 ? 'left' : 'right';
+      m.moving = moved;
+      if (moved) mobsDirty = true;
+    } else m.moving = false;
+    if (was !== m.moving) mobsDirty = true;
+  }
+  if (mobsDirty) { mobsDirty = false; io.to(ROOM).volatile.emit('mobs', [...mobs.values()].map(pubMob)); }
+}, 100);
+
+// ❤️ 체력 회복 (마지막으로 맞고 6초 지나면, 던전 밖에서 더 빨리)
+setInterval(() => {
+  const now = Date.now();
+  for (const p of Object.values(players)) {
+    const mx = maxOf(p);
+    if (p.hp > mx) { p.hp = mx; sendHp(p); continue; }
+    if (p.hp < mx && now - (p.lastHit || 0) > 6000) { p.hp = Math.min(mx, p.hp + Math.max(2, Math.round(mx * (inDungeon(p) ? 0.01 : 0.04)))); sendHp(p); }
+  }
+}, 1000);
+
 async function saveAll() {
   try {
     if (worldDirty) { worldDirty = false; await saveData('world', serializeWorld()); }
@@ -1467,7 +1843,7 @@ function computeRecover(pr) {
 }
 
 function migrateWorld(saved) {
-  const ground = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) =>
+  const ground = Array.from({ length: S.H0 }, (_, y) => Array.from({ length: S.W0 }, (_, x) =>
     (y < saved.h && x < saved.w ? saved.ground[y][x] : 'grass')));
   const objects = Object.assign({}, saved.objects);
   S.expandWorld(ground, objects);
@@ -1480,7 +1856,7 @@ function upgradeWorldV4(saved) {
   const ground = saved.ground.map((row) => row.slice());
   for (const [k, c] of Object.entries(saved.chests || {})) {
     const y = +k.split(',')[1];
-    if (y < S.CY) continue;
+    if (y < S.CY - S.TY) continue; // (예전 좌표 기준)
     const items = {};
     for (const it of c.items || []) if (it) items[it.id] = (items[it.id] || 0) + it.n;
     const pr = c.owner && profiles[c.owner.toLowerCase()];
@@ -1488,39 +1864,47 @@ function upgradeWorldV4(saved) {
     delete saved.chests[k];
   }
   S.upgradeV4(ground, objects);
-  for (const a of saved.animals || []) if (a.y >= S.CY * TILE) { a.x = a.hx = S.SPAWN.x + 40; a.y = a.hy = S.SPAWN.y + 80; }
+  const lsx = S.SPAWN.x - S.TX * TILE, lsy = S.SPAWN.y - S.TY * TILE; // 예전 좌표의 마을 시작점
+  for (const a of saved.animals || []) if (a.y >= (S.CY - S.TY) * TILE) { a.x = a.hx = lsx + 40; a.y = a.hy = lsy + 80; }
   return { ground, objects: new Map(Object.entries(objects)) };
 }
 (async () => {
   profiles = (await loadData('profiles')) || {};
   board = Object.assign(board, (await loadData('board')) || {});
   const saved = process.env.RESET_WORLD ? null : await loadData('world');
+  let legacy = false; // 예전 크기(100×112) 지도면 아래에서 v7 로 옮겨요
   if (saved && saved.version === S.WORLD_VERSION && saved.w === W && saved.h === H) {
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
     console.log('🗺️  저장된 맵을 불러왔어요');
-  } else if (saved && saved.version === 5 && saved.w === W && saved.h === H) {
+  } else if (saved && saved.version === 6 && saved.w === S.W0 && saved.h === S.H0) {
+    await saveData('world_backup_v6', saved);
+    world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
+    chests = new Map(Object.entries(saved.chests || {}));
+    (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
+    legacy = true;
+  } else if (saved && saved.version === 5 && saved.w === S.W0 && saved.h === S.H0) {
     // 버전 5 → 6: 마을 테두리 나무만 없애요
     await saveData('world_backup_v5', saved);
     S.removeTownBorder(saved.objects);
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
-    worldDirty = true;
+    worldDirty = true; legacy = true;
     console.log('🗺️  마을 테두리 나무를 없앴어요. 예전 맵은 world_backup_v5 에 보관했어요');
-  } else if (saved && saved.version === 4 && saved.w === W && saved.h === H) {
+  } else if (saved && saved.version === 4 && saved.w === S.W0 && saved.h === S.H0) {
     await saveData('world_backup_v4', saved);
     world = upgradeWorldV4(saved);
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
-    worldDirty = profilesDirty = true;
+    worldDirty = profilesDirty = true; legacy = true;
     console.log('🗺️  지도를 새 배치로 바꿨어요 (생산 구역은 아래로). 예전 맵은 world_backup_v4 에 보관했어요');
   } else if (saved && saved.version === 3 && saved.w === S.OW && saved.h === S.OH) {
     await saveData('world_backup_v3', saved);
     world = migrateWorld(saved);
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
-    worldDirty = true;
+    worldDirty = true; legacy = true;
     console.log('🗺️  예전 맵을 넓혔어요 (숲·동굴 추가). 예전 맵은 world_backup_v3 에 따로 보관했어요');
   } else {
     const g = S.generateWorld();
@@ -1529,6 +1913,22 @@ function upgradeWorldV4(saved) {
     worldDirty = true;
     console.log('🗺️  새 맵을 만들었어요');
   }
+  // v7: 예전 지도를 통째로 오른쪽(+44)·아래(+40)로 옮기고, 위에 던전 지대 · 왼쪽 새 땅 · 숲 밖 나무 정리
+  if (legacy) {
+    const v = S.toV7(world.ground, Object.fromEntries(world.objects));
+    world = { ground: v.ground, objects: new Map(Object.entries(v.objects)) };
+    const dx = S.TX * TILE, dy = S.TY * TILE;
+    chests = new Map([...chests.entries()].map(([k, c]) => { const [x, y] = k.split(',').map(Number); return [(x + S.TX) + ',' + (y + S.TY), c]; }));
+    for (const a of animals.values()) { a.x += dx; a.y += dy; a.tx += dx; a.ty += dy; a.hx += dx; a.hy += dy; }
+    for (const pr of Object.values(profiles)) {
+      if (pr.mapV >= 7) continue;
+      if (isNum(pr.x) && isNum(pr.y)) { pr.x += dx; pr.y += dy; }
+      pr.mapV = 7;
+    }
+    worldDirty = profilesDirty = true;
+    console.log('🗺️  v7 지도로 넓혔어요: 위쪽 던전 지대 + 왼쪽 새 땅 (지은 건물은 그대로 옮겼어요)');
+  }
+  initMobSlots();
   if (Object.keys(profiles).length && !(await loadData('profiles_backup_v5'))) {
     await saveData('profiles_backup_v5', profiles);
     console.log('💾 업데이트 전 프로필을 profiles_backup_v5 에 따로 보관했어요');
