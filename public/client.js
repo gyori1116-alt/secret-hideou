@@ -185,9 +185,15 @@
     const seen = new Set();
     for (const [id, kind, x, y, left, moving, hp, hurt] of list) {
       seen.add(id);
-      const m = mobs[id];
-      if (!m || Math.hypot(m.dx - x, m.dy - y) > TILE * 6) mobs[id] = { kind, x, y, dx: x, dy: y, dir: left ? 'left' : 'right', moving: !!moving, hp, hurt };
-      else Object.assign(m, { x, y, dir: left ? 'left' : 'right', moving: !!moving, hp, hurt });
+      const m = mobs[id], now = performance.now();
+      if (!m || Math.hypot(m.dx - x, m.dy - y) > TILE * 6) mobs[id] = { kind, x, y, sx: x, sy: y, st: now, vx: 0, vy: 0, dx: x, dy: y, dir: left ? 'left' : 'right', moving: !!moving, hp, hurt };
+      else {
+        // 서버에서 받은 두 위치로 속도를 어림해요 (멈춰 있으면 0)
+        const dts = Math.max(0.05, (now - m.st) / 1000);
+        const vx = moving ? (x - m.sx) / dts : 0, vy = moving ? (y - m.sy) / dts : 0;
+        const cap = 60; // 너무 큰 값은 자르기 (렉 뒤에 몰려 온 경우)
+        Object.assign(m, { x, y, sx: x, sy: y, st: now, vx: Math.max(-cap, Math.min(cap, vx)), vy: Math.max(-cap, Math.min(cap, vy)), dir: left ? 'left' : 'right', moving: !!moving, hp, hurt });
+      }
     }
     for (const id in mobs) if (!seen.has(id)) delete mobs[id];
   }
@@ -1052,13 +1058,17 @@
     $('modalTitle').textContent = `${J.icon} ${J.name} · Lv.${li.lv}`;
     body.append(tabs(meTab, [['lv', '⭐ 레벨 보상'], ['title', '🏷️ 칭호'], ['gear', '🛡️ 장비·능력치']], (t) => { meTab = t; }));
     if (meTab === 'title') {
-      body.append(el('p', { class: 'note' }, '칭호는 이름 위에 보여요. 업적·직업·보스 처치로 얻어요.'));
+      body.append(el('p', { class: 'note' }, '칭호는 이름 위에 보여요. 업적·직업·보스 처치로 얻어요. ✨희귀 칭호는 아주 오래 해야 얻고, 얻으면 마을 전체에 알려져요.'));
       const rows = el('div', { class: 'rows' });
-      const have = (t) => S.titleOk({ stats: my.stats, job: my.job, jobsDone: my.jobsDone }, t);
+      const mine = { stats: my.stats, job: my.job, jobsDone: my.jobsDone, col: my.col };
+      const have = (t) => S.titleOk(mine, t);
+      const n = S.TITLES.filter(have).length;
+      body.append(el('p', { class: 'note' }, `🏷️ 모은 칭호 ${n} / ${S.TITLES.length}`));
       [...S.TITLES].sort((a, b) => (have(b) ? 1 : 0) - (have(a) ? 1 : 0)).forEach((t) => {
         const ok = have(t), on = my.title === t.id;
+        const prog = ok || t.job ? '' : ' · ' + S.titleConds(mine, t).map((c) => `${Math.min(c.v, c.n).toLocaleString()}/${c.n.toLocaleString()}`).join(' · ');
         rows.append(el('div', { class: 'row' + (ok ? '' : ' dim') + (on ? ' ready' : '') },
-          el('div', { class: 'grow' }, el('b', {}, `${ok ? '🏷️' : '🔒'} 「${t.name}」`), el('small', {}, t.desc)),
+          el('div', { class: 'grow' }, el('b', {}, `${ok ? '🏷️' : '🔒'} ${t.hard ? '✨' : ''}「${t.name}」`), el('small', {}, t.desc + prog)),
           ok ? el('button', { class: 'btn' + (on ? ' pink' : ''), disabled: on, onclick: () => socket.emit('setTitle', { id: t.id }) }, on ? '다는 중' : '달기') : null));
       });
       body.append(rows);
@@ -1395,6 +1405,12 @@
     }
     const b = 1 - Math.exp(-dt * 10);
     for (const an of Object.values(animals)) { an.dx += (an.x - an.dx) * b; an.dy += (an.y - an.dy) * b; }
+    // 👾 몬스터도 서버 위치를 부드럽게 따라가요 (예전엔 6칸 넘게 움직여야 한 번에 순간이동했어요)
+    for (const mb of Object.values(mobs)) {
+      // 다음 위치 받기 전까지는 받은 속도로 조금 앞서 움직여서 끊김을 줄여요
+      if ((mb.vx || mb.vy) && now - mb.st < 250) { const k = Math.min(dt, 0.15); mb.x += mb.vx * k; mb.y += mb.vy * k; }
+      mb.dx += (mb.x - mb.dx) * b; mb.dy += (mb.y - mb.dy) * b;
+    }
   }
 
   // ───────── 그리기 ─────────

@@ -1335,8 +1335,40 @@
     { id: 'ninja', name: '닌자', job: 'ninja', desc: '닌자로 전직' },
     { id: 'mvp', name: '금주의 MVP', stat: 'mvpWin', n: 1, desc: '금주의 MVP 1등' },
     { id: 'legend', name: '전설', stat: 'level', n: 20, desc: '레벨 20' },
+    // ── ✨ 희귀 칭호 (hard): 아주 오래 해야 얻어요. 얻으면 마을 전체에 알려요 ──
+    // all: 조건 여러 개를 모두 / stat: 통계 / col: 그 도감 항목을 얻은 횟수 / jobs: 전직해 본 직업 수
+    { id: 'slime_doom', hard: 1, name: '슬라임 학살자', stat: 'kill_slime', n: 1000, desc: '슬라임 1000마리 처치' },
+    { id: 'night_hunter', hard: 1, name: '밤의 사냥꾼', stat: 'kill_bat', n: 500, desc: '박쥐 500마리 처치' },
+    { id: 'bone_breaker', hard: 1, name: '뼈 부수는 자', stat: 'kill_skeleton', n: 500, desc: '해골 병사 500마리 처치' },
+    { id: 'exorcist', hard: 1, name: '퇴마사', stat: 'kill_ghost', n: 400, desc: '유령 400마리 처치' },
+    { id: 'rock_breaker', hard: 1, name: '바위 깨는 자', stat: 'kill_golem', n: 300, desc: '돌 골렘 300마리 처치' },
+    { id: 'flame_tamer', hard: 1, name: '불꽃 조련사', stat: 'kill_imp', n: 300, desc: '불꽃 임프 300마리 처치' },
+    { id: 'war_legend', hard: 1, name: '전장의 전설', stat: 'kill', n: 5000, desc: '몬스터 5000마리 처치' },
+    { id: 'slime_nemesis', hard: 1, name: '킹슬라임의 천적', stat: 'boss1', n: 30, desc: '킹슬라임 처치 30번 참여' },
+    { id: 'grave_lord', hard: 1, name: '묘지의 지배자', stat: 'boss2', n: 20, desc: '해골 기사 처치 20번 참여' },
+    { id: 'dragon_slayer', hard: 1, name: '드래곤 슬레이어', stat: 'boss3', n: 10, desc: '드래곤 처치 10번 참여' },
+    { id: 'boss_legend', hard: 1, name: '보스 학살자', stat: 'bossTop1', n: 30, desc: '보스 딜량 1등 30번' },
+    { id: 'undying', hard: 1, name: '오뚝이', all: [{ stat: 'deaths', n: 100 }, { stat: 'kill', n: 1000 }], desc: '100번 쓰러지고도 몬스터 1000마리 처치' },
+    { id: 'en_addict', hard: 1, name: '강화 중독자', stat: 'enhanceTry', n: 500, desc: '강화 500번 시도' },
+    { id: 'angler_king', hard: 1, name: '강태공', stat: 'fish', n: 1000, desc: '물고기 1000마리 낚기' },
+    { id: 'golden_angler', hard: 1, name: '황금 낚시꾼', col: 'fish_golden', n: 10, desc: '황금잉어 10마리 낚기' },
+    { id: 'big_farmer', hard: 1, name: '대농', stat: 'harvest', n: 3000, desc: '작물 3000개 수확' },
+    { id: 'chef_king', hard: 1, name: '요리왕', stat: 'cook', n: 500, desc: '요리 500번' },
+    { id: 'deep_miner', hard: 1, name: '심층 광부', stat: 'gem', n: 300, desc: '보석 300개 캐기' },
+    { id: 'tycoon', hard: 1, name: '재벌', stat: 'earned', n: 200000, desc: '판매 수익 200,000' },
+    { id: 'architect', hard: 1, name: '대건축가', all: [{ stat: 'wallPlaced', n: 1000 }, { stat: 'furniturePlaced', n: 300 }], desc: '벽 1000개 + 가구 300개 놓기' },
+    { id: 'encyclopedia', hard: 1, name: '걸어다니는 도감', stat: 'col', n: Object.keys(COL_INDEX).length, desc: `도감 ${Object.keys(COL_INDEX).length}칸 전부 채우기` },
+    { id: 'all_jobs', hard: 1, name: '만능 모험가', jobs: 4, desc: '기사·궁수·마법사·닌자 모두 전직해 보기' },
+    { id: 'hall_of_fame', hard: 1, name: '명예의 전당', stat: 'mvpWin', n: 5, desc: '금주의 MVP 1등 5번' },
+    { id: 'living_legend', hard: 1, name: '살아있는 전설', all: [{ stat: 'level', n: 40 }, { stat: 'enMax', n: 10 }], desc: '레벨 40 + 무기 +10 강화' },
   ];
-  const titleOk = (pr, t) => (t.job ? pr.job === t.job || (pr.jobsDone || []).includes(t.job) : !t.stat || ((pr.stats || {})[t.stat] || 0) >= t.n);
+  // 칭호 조건 목록 → [{ 조건, 지금 값 }]
+  function titleConds(pr, t) {
+    if (t.job) return [{ n: 1, v: pr.job === t.job || (pr.jobsDone || []).includes(t.job) ? 1 : 0 }];
+    const list = t.all || (t.stat ? [{ stat: t.stat, n: t.n }] : t.col ? [{ col: t.col, n: t.n }] : t.jobs ? [{ jobs: 1, n: t.jobs }] : []);
+    return list.map((c) => ({ n: c.n, v: c.stat ? ((pr.stats || {})[c.stat] || 0) : c.col ? ((pr.col || {})[c.col] || 0) : c.jobs ? (pr.jobsDone || []).length : 0 }));
+  }
+  const titleOk = (pr, t) => titleConds(pr, t).every((c) => c.v >= c.n);
 
   // ───────── v7 지도: 예전 지도를 오른쪽·아래로 옮기고, 위에 던전 지대 · 왼쪽에 새 땅 ─────────
   const DUNGEONS = [
@@ -1512,7 +1544,7 @@
     UPDATES,
     TILE, OW, OH, W, H, CY, BX, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
     hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, maxPets, zoneAt,
-    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, legacyJobTasks, legacyJobDone, QUEST_DROPS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
+    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, legacyJobTasks, legacyJobDone, titleConds, QUEST_DROPS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
     MAX_EN, ENHANCE, MOBS, BOSS_SHARE, BOSS_RARE, MOB_RESPAWN, BOSS_RESPAWN, TITLES, titleOk,
     expToNext, levelInfo, EXP, invSize, levelUnlocks, shopLv, MVP_CATS, MVP_STAT, MVP_PRIZE, NATURAL, upgradeV4, removeTownBorder,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,

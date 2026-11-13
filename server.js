@@ -34,8 +34,8 @@ async function loadData(key) {
     return null;
   }
 }
-async function saveData(key, obj) {
-  const s = JSON.stringify(obj);
+async function saveData(key, obj) { return saveRaw(key, JSON.stringify(obj)); }
+async function saveRaw(key, s) {
   if (UP_URL && UP_TOKEN) return upstash(['SET', 'hideout:' + key, s]);
   await fs.promises.mkdir(DATA_DIR, { recursive: true });
   const f = path.join(DATA_DIR, key + '.json');
@@ -183,6 +183,8 @@ function ensureProfile(pr) {
   pr.equip = pr.equip || {};
   pr.jobsDone = pr.jobsDone || [];
   if (!pr.title || !S.TITLES.some((t) => t.id === pr.title)) pr.title = 'newbie';
+  // 이미 가진 칭호는 '본 것'으로 (처음 한 번은 알림 없이)
+  if (!Array.isArray(pr.titlesSeen)) pr.titlesSeen = S.TITLES.filter((t) => S.titleOk(pr, t)).map((t) => t.id);
   pr.mail = pr.mail || [];
   if (pr.recover && Object.keys(pr.recover).length) pr.mail.push({ title: '📮 예전에 가방이 꽉 차서 못 받은 보상', items: pr.recover });
   delete pr.recover;
@@ -228,8 +230,25 @@ function refreshPQ(pr, now = Date.now()) {
   return changed;
 }
 
+// 🏷️ 새로 얻은 칭호 알림 (희귀 칭호는 마을 전체에)
+function checkTitles(p) {
+  const pr = p.prof;
+  for (const t of S.TITLES) {
+    if (pr.titlesSeen.includes(t.id) || !S.titleOk(pr, t)) continue;
+    pr.titlesSeen.push(t.id);
+    toast(p.socket, `🏷️ 새 칭호 「${t.name}」을(를) 얻었어요! (왼쪽 위 Lv 칸 → 🏷️ 칭호에서 달 수 있어요)`);
+    if (t.hard) sys(`✨ ${p.name} 님이 희귀 칭호 「${t.name}」을(를) 얻었어요! (${t.desc})`);
+  }
+}
+// 공격처럼 자주 일어나는 일은 내 정보(me)를 모아서 0.5초에 한 번만 보내요 (렉 줄이기)
+function sendMeSoon(p) {
+  if (p.meTimer) return;
+  p.meTimer = setTimeout(() => { p.meTimer = null; if (players[p.id]) sendMe(p); }, 500);
+}
 function sendMe(p) {
   const pr = p.prof;
+  if (p.meTimer) { clearTimeout(p.meTimer); p.meTimer = null; }
+  checkTitles(p);
   const per = S.periods(Date.now());
   p.socket.emit('me', {
     coins: pr.coins, inv: pr.inv, stats: pr.stats, claimed: pr.claimed, unlocked: pr.unlocked, avatar: pr.avatar,
@@ -762,7 +781,8 @@ function handleAct(p, type, x, y, slot, rot) {
 // ───────── ⚔️ 전투: 체력 · 몬스터 · 던전 ─────────
 const mobs = new Map();
 const mobSlots = [];        // 몬스터가 나오는 자리 (죽으면 시간이 지나 다시 나와요)
-let nextMobId = 1, mobsDirty = false;
+let nextMobId = 1, mobsDirty = false, lastMobSync = 0;
+const MOB_VIEW_Y = (S.TY + 20) * TILE; // 이 줄보다 위(던전 지대 근처)에 있는 사람만 몬스터 위치를 받아요
 const inDungeon = (p) => p.y < S.TY * TILE;
 function teleport(p, x, y) {
   if (p.pose) setPose(p, null);
@@ -869,7 +889,7 @@ function killMob(m, killer) {
       else toast(killer.socket, '🎒 가방이 꽉 차서 퀘스트 아이템을 못 주웠어요');
     }
     toast(killer.socket, `${def.name} 처치! ⭐+${def.exp} 💰+${coins}${got.length ? ' · ' + got.join(', ') : ''}`);
-    sendMe(killer);
+    sendMeSoon(killer);
     return;
   }
   // 👑 보스: 가장 많이 때린 순서대로 1~3등만 보상 + 채팅에 딜량 순위
@@ -948,7 +968,7 @@ function doAttack(p, ax, ay, aimX, aimY) {
         if (def.weapon === 'sword') for (const m of [...mobs.values()].filter((q) => q !== best.m && Math.hypot(mc(q).x - tgt.x, mc(q).y - tgt.y) < 20).slice(0, 3)) hitMob(p, m, dmg, crit);
         if (def.weapon === 'staff') { io.to(ROOM).emit('fx', { x: tgt.x, y: tgt.y, text: '✨' }); for (const m of [...mobs.values()].filter((q) => q !== best.m && Math.hypot(mc(q).x - tgt.x, mc(q).y - tgt.y) < W.splash)) hitMob(p, m, Math.round(dmg * 0.6), crit); }
       } else { if (def.weapon === 'bow') stat(p, 'bowHit'); animalHit(bestA); }
-      sendMe(p);
+      sendMeSoon(p);
       return;
     }
   }
@@ -983,7 +1003,7 @@ function doAttack(p, ax, ay, aimX, aimY) {
       if (hitM) hitMob(p, hitM, dmg, crit); else if (hitA) animalHit(hitA);
     }
   }
-  sendMe(p);
+  sendMeSoon(p);
 }
 // 대장간(모루) 근처인지
 function nearAnvil(p) {
@@ -1049,8 +1069,9 @@ io.on('connection', (socket) => {
   let lastChat = 0, lastAct = 0;
   const me = () => players[socket.id];
 
-  socket.on('join', (data = {}) => {
-    if (players[socket.id]) return;
+  let joining = false;
+  socket.on('join', async (data = {}) => {
+    if (players[socket.id] || joining) return;
     if (ROOM_CODE && String(data.code || '').trim() !== ROOM_CODE) return socket.emit('joinError', '비밀 코드가 틀렸어요 🔒');
     const name = String(data.name || '').trim().slice(0, 12);
     if (!name) return socket.emit('joinError', '이름을 입력해 주세요');
@@ -1059,6 +1080,21 @@ io.on('connection', (socket) => {
     if (dup) {
       if (!data.rejoin) return socket.emit('joinError', '이미 같은 이름으로 접속 중이에요');
       dup.socket.disconnect(true);
+    }
+    // 💾 저장소에 더 최신 프로필이 있으면 그걸로 (서버가 다시 켜지는 동안 다른 서버에서 놀았던 경우)
+    if (!dup && knownKeys.has(k)) {
+      joining = true;
+      try {
+        const fresh = await loadData(PKEY(k));
+        if (fresh && (fresh.rev || 0) > ((profiles[k] && profiles[k].rev) || 0)) {
+          profiles[k] = ensureProfile(fresh);
+          savedProf.set(k, JSON.stringify(fresh));
+          console.log(`💾 ${name}: 저장소의 더 최신 프로필(rev ${fresh.rev})을 불러왔어요`);
+        }
+      } catch (e) { console.error('프로필 다시 불러오기 실패:', k, e.message); }
+      joining = false;
+      if (!socket.connected || players[socket.id]) return;
+      if (Object.values(players).some((q) => q.key === k)) return socket.emit('joinError', '이미 같은 이름으로 접속 중이에요');
     }
 
     let prof = profiles[k];
@@ -1538,6 +1574,7 @@ io.on('connection', (socket) => {
       p.socket.emit('enhanceResult', { ok: false, label: S.itemLabel(it) });
     }
     sendMe(p);
+    saveProfileNow(p.key); // 강화 결과는 바로 저장
   });
 
   // 🧭 전직: 퀘스트 시작 → 다 깨면 전직
@@ -1667,7 +1704,9 @@ io.on('connection', (socket) => {
     if (p.trade && trades.get(p.trade)) endTrade(trades.get(p.trade), `${p.name} 님이 나가서 거래가 취소됐어요`);
     p.prof.x = p.x; p.prof.y = p.y;
     profilesDirty = true;
+    if (p.meTimer) { clearTimeout(p.meTimer); p.meTimer = null; }
     delete players[socket.id];
+    saveProfileNow(p.key); // 나가면 바로 저장 (다른 기기로 들어가도 그대로)
     // 따라다니던 강아지는 집으로 돌아가요
     if (!Object.values(players).some((q) => q.key === p.key)) {
       for (const a of animals.values()) if (S.ANIMALS[a.kind].pet && isOwner(p, a)) { a.x = a.tx = a.hx; a.y = a.ty = a.hy; animalsDirty = worldDirty = true; }
@@ -1871,26 +1910,75 @@ setInterval(() => {
     } else m.moving = false;
     if (was !== m.moving) mobsDirty = true;
   }
-  if (mobsDirty) { mobsDirty = false; io.to(ROOM).volatile.emit('mobs', [...mobs.values()].map(pubMob)); }
+  // 몬스터 위치는 던전 근처에 있는 사람에게만 보내요 (마을에 있는 사람은 안 받아도 돼요 → 렉 줄이기)
+  // 움직임이 없어도 1초마다 한 번은 보내서, 새로 온 사람이나 빠진 패킷을 맞춰요
+  if (mobsDirty || now - lastMobSync > 1000) {
+    mobsDirty = false; lastMobSync = now;
+    const list = [...mobs.values()].map(pubMob);
+    for (const p of Object.values(players)) if (p.y < MOB_VIEW_Y) p.socket.volatile.emit('mobs', list);
+  }
 }, 100);
 
 // ❤️ 체력은 저절로 차지 않아요 (요리·물약으로만 회복)
 
-async function saveAll() {
-  try {
-    if (worldDirty) { worldDirty = false; await saveData('world', serializeWorld()); }
-    if (profilesDirty) { profilesDirty = false; await saveData('profiles', profiles); }
-    if (boardDirty) { boardDirty = false; await saveData('board', board); }
-  } catch (e) {
-    worldDirty = profilesDirty = boardDirty = true;
-    console.error('저장 실패:', e.message);
+// ───────── 💾 저장 ─────────
+// 프로필은 사람마다 따로 저장해요 (예전엔 모두를 한 덩어리로 저장해서, 크거나 실패하면 전부 날아갈 수 있었어요)
+// rev: 저장할 때마다 1씩 올라가는 번호. 서버가 다시 켜지는 중에 두 서버가 겹쳐도, 접속할 때 더 최신 번호를 골라요.
+const PKEY = (k) => 'p_' + encodeURIComponent(k);
+const savedProf = new Map();      // k → 마지막으로 저장한 내용 (바뀐 사람만 저장)
+const knownKeys = new Set();      // 저장소에 있는 프로필 목록
+let keysDirty = false, saving = null;
+const profChain = new Map();      // 같은 사람 저장이 겹치지 않게 줄 세우기
+function saveProfile(k) {
+  const next = (profChain.get(k) || Promise.resolve()).catch(() => {}).then(() => saveProfile1(k));
+  profChain.set(k, next);
+  next.finally(() => { if (profChain.get(k) === next) profChain.delete(k); }).catch(() => {});
+  return next;
+}
+async function saveProfile1(k) {
+  const pr = profiles[k];
+  if (!pr) return;
+  const before = JSON.stringify(pr);
+  if (savedProf.get(k) === before) return;
+  pr.rev = (pr.rev || 0) + 1;
+  const s = JSON.stringify(pr);
+  try { await saveRaw(PKEY(k), s); savedProf.set(k, s); } catch (e) { pr.rev--; throw e; }
+  if (!knownKeys.has(k)) { knownKeys.add(k); keysDirty = true; }
+}
+async function loadProfiles() {
+  const keys = await loadData('profile_keys');
+  if (!Array.isArray(keys)) return (await loadData('profiles')) || {}; // 예전 한 덩어리 저장 → 다음 저장부터 사람마다 따로
+  const out = {};
+  for (let i = 0; i < keys.length; i += 20) {
+    const part = keys.slice(i, i + 20);
+    const vals = await Promise.all(part.map((k) => loadData(PKEY(k))));
+    part.forEach((k, j) => { if (vals[j]) { out[k] = vals[j]; knownKeys.add(k); } });
   }
+  return out;
+}
+// 한 사람만 바로 저장 (나갈 때, 강화했을 때)
+function saveProfileNow(k) {
+  saveProfile(k).then(() => keysDirty && saveData('profile_keys', [...knownKeys]).then(() => { keysDirty = false; }))
+    .catch((e) => console.error('프로필 저장 실패:', k, e.message));
+}
+async function saveAll() {
+  if (saving) return saving;
+  saving = (async () => {
+    // 하나가 실패해도 나머지는 저장해요
+    try { if (worldDirty) { worldDirty = false; await saveData('world', serializeWorld()); } } catch (e) { worldDirty = true; console.error('맵 저장 실패:', e.message); }
+    for (const p of Object.values(players)) { p.prof.x = p.x; p.prof.y = p.y; }
+    for (const k of Object.keys(profiles)) {
+      try { await saveProfile(k); } catch (e) { console.error('프로필 저장 실패:', k, e.message); }
+    }
+    try { if (keysDirty) { keysDirty = false; await saveData('profile_keys', [...knownKeys]); } } catch (e) { keysDirty = true; console.error('프로필 목록 저장 실패:', e.message); }
+    try { if (boardDirty) { boardDirty = false; await saveData('board', board); } } catch (e) { boardDirty = true; console.error('게시판 저장 실패:', e.message); }
+    profilesDirty = false;
+  })();
+  try { await saving; } finally { saving = null; }
 }
 setInterval(saveAll, 15000);
 
 async function shutdown() {
-  for (const p of Object.values(players)) { p.prof.x = p.x; p.prof.y = p.y; }
-  profilesDirty = true;
   await saveAll();
   process.exit(0);
 }
@@ -1947,8 +2035,8 @@ function upgradeWorldV4(saved) {
   return { ground, objects: new Map(Object.entries(objects)) };
 }
 (async () => {
-  profiles = (await loadData('profiles')) || {};
-  board = Object.assign(board, (await loadData('board')) || {});
+  profiles = await loadProfiles();
+  board =Object.assign(board, (await loadData('board')) || {});
   const saved = process.env.RESET_WORLD ? null : await loadData('world');
   let legacy = false; // 예전 크기(100×112) 지도면 아래에서 v7 로 옮겨요
   if (saved && saved.version === S.WORLD_VERSION && saved.w === W && saved.h === H) {
@@ -2024,6 +2112,8 @@ function upgradeWorldV4(saved) {
     }
     profilesDirty = true;
   }
+  // 불러온 그대로인 프로필은 '저장됨'으로 표시: 켜지자마자 옛 내용을 다시 덮어쓰지 않게 (배포 중 두 서버가 겹칠 때 중요)
+  for (const k of knownKeys) if (profiles[k]) savedProf.set(k, JSON.stringify(profiles[k]));
   checkMvpWeek();
   // 📢 새 업데이트면 채팅으로 공지 (게시판 '업데이트 소식' 탭에 자세히)
   const latest = S.UPDATES[0];
