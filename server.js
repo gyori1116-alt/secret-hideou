@@ -773,6 +773,8 @@ function teleport(p, x, y) {
 }
 function sendHp(p) {
   if (!p || !p.socket) return;
+  if (p.hp > maxOf(p)) p.hp = maxOf(p);
+  p.prof.hp = p.hp; profilesDirty = true; // 다시 접속해도 체력은 그대로
   p.socket.emit('hp', { hp: p.hp, max: maxOf(p), def: defOf(p) });
   io.to(ROOM).emit('php', { id: p.id, hp: p.hp, max: maxOf(p) });
 }
@@ -835,6 +837,15 @@ function rewardTo(key, title, rw) {
   profilesDirty = true;
   if (q) { toast(q.socket, '🎒 가방이 꽉 차서 보상을 📮 우편함(퀘스트 창)에 넣었어요'); sendMe(q); }
 }
+// 지금 전직 퀘스트 단계에서 이 아이템이 몇 개 더 필요한지
+// 단계를 시작할 때의 통계 (모으기 퀘스트는 이때부터 센 개수)
+function stageBase(pr, tasks) { const b = {}; for (const q of tasks) if (q.stat) b[q.stat] = pr.stats[q.stat] || 0; return b; }
+function jobNeed(pr, item) {
+  const jq = pr.jobQuest, J = jq && S.JOBS[jq.cls];
+  if (!J || !J.stages || !J.stages[jq.stage]) return 0;
+  const task = J.stages[jq.stage].find((t) => t.item === item);
+  return task ? task.n - S.countItem(pr.inv, item) : 0;
+}
 function killMob(m, killer) {
   const def = S.MOBS[m.kind];
   mobs.delete(m.id); mobsDirty = true;
@@ -851,6 +862,12 @@ function killMob(m, killer) {
       if (S.canFit(killer.prof.inv, { [id]: n })) { give(killer, id, n); got.push(`${S.ITEMS[id].name} ${n}`); }
       else toast(killer.socket, `🎒 가방이 꽉 차서 ${S.ITEMS[id].name}을(를) 못 주웠어요`);
     }
+    // 전직 퀘스트 아이템 (필요한 단계일 때만)
+    const qd = S.QUEST_DROPS[m.kind];
+    if (qd && jobNeed(killer.prof, qd[0]) > 0 && rand() < qd[1]) {
+      if (S.canFit(killer.prof.inv, { [qd[0]]: 1 })) { give(killer, qd[0], 1, true); got.push(`📜${S.ITEMS[qd[0]].name}`); }
+      else toast(killer.socket, '🎒 가방이 꽉 차서 퀘스트 아이템을 못 주웠어요');
+    }
     toast(killer.socket, `${def.name} 처치! ⭐+${def.exp} 💰+${coins}${got.length ? ' · ' + got.join(', ') : ''}`);
     sendMe(killer);
     return;
@@ -862,7 +879,14 @@ function killMob(m, killer) {
   const pct = (v) => Math.round(v / total * 100);
   sys(`🏆 ${def.name} 처치! 딜량 순위 — ${rank.slice(0, 3).map(([k, v], i) => `${medal[i]} ${m.names[k]} ${v.toLocaleString()} (${pct(v)}%)`).join(' · ')}`
     + `${rank.length > 3 ? ` · 그 외 ${rank.length - 3}명` : ''} · 총 피해 ${total.toLocaleString()}`);
-  for (const [k] of rank) { const pr = profiles[k]; if (pr) pr.stats['boss' + def.star] = (pr.stats['boss' + def.star] || 0) + 1; }
+  for (const [k] of rank) {
+    const pr = profiles[k];
+    if (!pr) continue;
+    pr.stats['boss' + def.star] = (pr.stats['boss' + def.star] || 0) + 1;
+    // 전직 퀘스트 아이템 (보스): 참여한 사람 중 필요한 사람 모두
+    const qd = S.QUEST_DROPS[m.kind];
+    if (qd && jobNeed(pr, qd[0]) > 0) rewardTo(k, `📜 전직 퀘스트 아이템: ${S.ITEMS[qd[0]].name}`, { items: { [qd[0]]: 1 } });
+  }
   rank.slice(0, 3).forEach(([k, v], i) => {
     const share = S.BOSS_SHARE[i];
     const rw = { coins: Math.round(rollRange(def.coins) * share), exp: Math.round(def.exp * share), items: {} };
@@ -880,7 +904,7 @@ function killMob(m, killer) {
   profilesDirty = true;
 }
 // 공격: 들고 있는 무기 종류에 따라 (검: 앞쪽 여러 명 / 활: 화살 / 지팡이: 터지는 마법 / 닌자: 빠른 한 명 + 치명타)
-function doAttack(p, ax, ay) {
+function doAttack(p, ax, ay, aimX, aimY) {
   const pr = p.prof, now = Date.now();
   const it = pr.inv[p.sel | 0], def = it && S.ITEMS[it.id];
   if (!def || !def.weapon) return;
@@ -900,6 +924,34 @@ function doAttack(p, ax, ay) {
   const x0 = p.x, y0 = p.y - 8;
   const wild = [...animals.values()].filter((a) => S.ANIMALS[a.kind].wild);
   const animalHit = (a) => { const msg = hurtAnimal(p, a, Math.max(1, Math.round(dmg / 6))); if (msg) toast(p.socket, msg); };
+  // 🎯 커서로 가리킨 적이 사거리 안이면 그 적에게 확실히 맞아요
+  if (isNum(aimX) && isNum(aimY)) {
+    const range = W.range + (mine && def.weapon === 'bow' ? 2 * TILE : 0);
+    const mc = (m) => { const boss = S.MOBS[m.kind].boss; return { x: m.x, y: m.y - (boss ? 18 : 7), r: boss ? 22 : 10 }; };
+    let best = null, bd = Infinity;
+    for (const m of mobs.values()) {
+      const c = mc(m), da = Math.hypot(c.x - aimX, c.y - aimY);
+      if (da <= c.r + 6 && Math.hypot(c.x - x0, c.y - y0) <= range + c.r && da < bd) { bd = da; best = { m, c }; }
+    }
+    let bestA = null;
+    if (!best) for (const a of wild) { if (Math.hypot(a.x - aimX, a.y - 6 - aimY) <= 14 && Math.hypot(a.x - x0, a.y - 6 - y0) <= range + 8) { bestA = a; break; } }
+    const tgt = best ? best.c : bestA ? { x: bestA.x, y: bestA.y - 6 } : null;
+    // 벽 너머는 안 돼요
+    const clear = (tx, ty) => { const d = Math.hypot(tx - x0, ty - y0); for (let s = 6; s < d - 6; s += 4) { const px = x0 + (tx - x0) * s / d, py = y0 + (ty - y0) * s / d; if (S.isSolidObj(getO(Math.floor(px / TILE), Math.floor((py + 8) / TILE)))) return false; } return true; };
+    if (tgt && clear(tgt.x, tgt.y)) {
+      const d = Math.hypot(tgt.x - x0, tgt.y - y0) || 1; ax = (tgt.x - x0) / d; ay = (tgt.y - y0) / d;
+      if (def.weapon === 'sword' || def.weapon === 'ninja') io.to(ROOM).emit('slash', { id: p.id, x: x0, y: y0, ax, ay, kind: def.weapon });
+      else io.to(ROOM).emit('arrow', { x0, y0, x1: tgt.x, y1: tgt.y, magic: def.weapon === 'staff' ? 1 : 0 });
+      if (best) {
+        hitMob(p, best.m, dmg, crit);
+        if (def.weapon === 'bow') stat(p, 'bowHit');
+        if (def.weapon === 'sword') for (const m of [...mobs.values()].filter((q) => q !== best.m && Math.hypot(mc(q).x - tgt.x, mc(q).y - tgt.y) < 20).slice(0, 3)) hitMob(p, m, dmg, crit);
+        if (def.weapon === 'staff') { io.to(ROOM).emit('fx', { x: tgt.x, y: tgt.y, text: '✨' }); for (const m of [...mobs.values()].filter((q) => q !== best.m && Math.hypot(mc(q).x - tgt.x, mc(q).y - tgt.y) < W.splash)) hitMob(p, m, Math.round(dmg * 0.6), crit); }
+      } else { if (def.weapon === 'bow') stat(p, 'bowHit'); animalHit(bestA); }
+      sendMe(p);
+      return;
+    }
+  }
   if (def.weapon === 'sword' || def.weapon === 'ninja') {
     const range = W.range, cone = def.weapon === 'sword' ? 0.15 : 0.45;
     const inFront = (tx, ty) => { const dx = tx - x0, dy = ty - y0, d = Math.hypot(dx, dy); return d <= range && (d < 6 || (dx * ax + dy * ay) / d > cone); };
@@ -1026,7 +1078,7 @@ io.on('connection', (socket) => {
 
     const p = players[socket.id] = { id: socket.id, name: prof.name, key: k, x, y, dir: 'down', moving: false, avatar: prof.avatar, fishing: null, prof, socket,
       sel: 0, held: prof.inv[0] ? prof.inv[0].id : null, pose: null, trade: null, tradeAsk: null };
-    p.hp = maxOf(p); p.lastHit = 0; p.lastAtk = 0;
+    p.hp = isNum(prof.hp) && prof.hp > 0 ? Math.min(prof.hp, maxOf(p)) : maxOf(p); p.lastHit = 0; p.lastAtk = 0;
     // 던전 안에서 나갔으면 마을에서 시작 (던전 앞마당은 그대로)
     if (S.DUNGEONS.some((q) => p.x >= q.x0 * TILE && p.x < (q.x1 + 1) * TILE && p.y < (q.gate.y + 1) * TILE)) { p.x = S.SPAWN.x; p.y = S.SPAWN.y; }
     socket.join(ROOM);
@@ -1437,7 +1489,7 @@ io.on('connection', (socket) => {
   socket.on('fishCancel', () => { const p = me(); if (p) endFishing(p, null); });
 
   // ⚔️ 공격 (예전 'shoot'도 같은 공격으로)
-  socket.on('attack', ({ ax, ay } = {}) => { const p = me(); if (p) doAttack(p, ax, ay); });
+  socket.on('attack', ({ ax, ay, tx, ty } = {}) => { const p = me(); if (p) doAttack(p, ax, ay, tx, ty); });
   socket.on('shoot', ({ ax, ay } = {}) => { const p = me(); if (p) doAttack(p, ax, ay); });
 
   // 🛡️ 갑옷 장착 / 벗기
@@ -1496,22 +1548,33 @@ io.on('connection', (socket) => {
   socket.on('jobStart', ({ cls } = {}) => {
     const p = me();
     const J = S.JOBS[cls];
-    if (!p || !J || cls === 'novice' || !J.quest) return;
+    if (!p || !J || cls === 'novice' || !J.stages) return;
     const pr = p.prof;
     if (pr.job !== 'novice') return toast(socket, '이미 전직했어요');
     if (lvOf(pr) < S.JOB_LV) return toast(socket, `레벨 ${S.JOB_LV}부터 전직할 수 있어요`);
-    const base = {};
-    for (const q of J.quest) base[q.stat] = pr.stats[q.stat] || 0;
-    pr.jobQuest = { cls, base };
-    toast(socket, `${J.icon} ${J.name} 전직 퀘스트를 시작했어요! (퀘스트를 다 깨고 교관에게 오세요)`);
+    pr.jobQuest = { cls, stage: 0, base: stageBase(pr, J.stages[0]) };
+    toast(socket, `${J.icon} ${J.name} 전직 퀘스트 1단계를 시작했어요! (5단계까지 깨면 전직)`);
     sendMe(p);
   });
   socket.on('jobCancel', () => { const p = me(); if (p) { p.prof.jobQuest = null; sendMe(p); } });
+  // 전직 퀘스트: 지금 단계를 끝내고 다음 단계로 (5단계를 끝내면 전직)
   socket.on('jobComplete', () => {
     const p = me();
     const pr = p && p.prof, jq = pr && pr.jobQuest, J = jq && S.JOBS[jq.cls];
-    if (!J) return;
-    if (!J.quest.every((q) => (pr.stats[q.stat] || 0) - (jq.base[q.stat] || 0) >= q.n)) return toast(socket, '아직 전직 퀘스트를 다 못 깼어요');
+    if (!J || !J.stages) return;
+    if (!Number.isInteger(jq.stage)) { jq.stage = 0; jq.base = stageBase(pr, J.stages[0]); } // 예전 방식 퀘스트는 1단계부터
+    const tasks = J.stages[jq.stage];
+    const ok = tasks.every((q) => (q.item ? S.countItem(pr.inv, q.item) >= q.n : (pr.stats[q.stat] || 0) - (jq.base[q.stat] || 0) >= q.n));
+    if (!ok) return toast(socket, '아직 이번 단계를 다 못 깼어요');
+    for (const q of tasks) if (q.item) S.removeItem(pr.inv, q.item, q.n);
+    if (jq.stage < J.stages.length - 1) {
+      jq.stage++;
+      jq.base = stageBase(pr, J.stages[jq.stage]);
+      addExp(p, 40 * jq.stage);
+      toast(socket, `📜 ${jq.stage}단계 완료! 이제 ${jq.stage + 1}단계예요 (⭐+${40 * jq.stage})`);
+      sendMe(p);
+      return;
+    }
     if (!room(p, J.reward)) return;
     pr.job = jq.cls; pr.jobQuest = null;
     if (!pr.jobsDone.includes(jq.cls)) pr.jobsDone.push(jq.cls);
@@ -1756,19 +1819,39 @@ setInterval(() => {
     m.target = t ? t.id : null;
     const reach = def.boss ? 28 : 14;
     let tx = m.x, ty = m.y, speed = def.speed;
-    if (t) {
+    // 공격은 예고(머리 위 ❗) → 잠깐 뒤에 아직 가까이 있으면 맞아요. 예고 중엔 멈춰 있어요 (피할 수 있어요)
+    if (m.windUp) {
+      if (now >= m.windUp) {
+        m.windUp = 0; m.atkAt = now;
+        const tt = players[m.windTarget];
+        if (tt && tt.hp > 0 && inDungeon(tt) && Math.hypot(tt.x - m.x, tt.y - m.y) <= reach + 6) hurtPlayer(tt, def.atk, def.name);
+        else io.to(ROOM).emit('fx', { x: m.x, y: m.y - 18, text: '💨' });
+      }
+      tx = m.x; ty = m.y;
+    } else if (m.stompHit) {
+      tx = m.x; ty = m.y;
+    } else if (t) {
       const d = Math.hypot(t.x - m.x, t.y - m.y);
       if (d > reach) { tx = t.x; ty = t.y; }
-      else if (now - m.atkAt > (def.boss ? 1500 : 1200)) { m.atkAt = now; hurtPlayer(t, def.atk, def.name); }
+      else if (now - m.atkAt > (def.boss ? 1500 : 1200)) {
+        const ms = def.boss ? 650 : 480;
+        m.windUp = now + ms; m.windTarget = t.id;
+        io.to(ROOM).emit('matk', { id: m.id, ms });
+      }
       if (def.boss && now >= m.stompAt) {
-        m.stompAt = now + 6000;
-        io.to(ROOM).emit('fx', { x: m.x, y: m.y - 10, text: '💥' });
-        for (const p of plist) if (Math.hypot(p.x - m.x, p.y - m.y) < 60) hurtPlayer(p, Math.round(def.atk * 0.7), def.name);
+        // 보스 내려찍기: 빨간 원으로 0.9초 예고 → 원 안에 있으면 맞아요
+        m.stompAt = now + 7000; m.stompHit = now + 900;
+        io.to(ROOM).emit('mstomp', { x: m.x, y: m.y, r: 60, ms: 900 });
       }
     } else if (homeD > TILE * 3) { tx = m.slot.x; ty = m.slot.y; }
     else {
       if (now >= m.nextThink) { m.nextThink = now + 2000 + rand() * 3000; m.wx = m.slot.x + (rand() * 2 - 1) * 28; m.wy = m.slot.y + (rand() * 2 - 1) * 28; }
       tx = m.wx; ty = m.wy; speed *= 0.5;
+    }
+    if (m.stompHit && now >= m.stompHit) {
+      m.stompHit = 0;
+      io.to(ROOM).emit('fx', { x: m.x, y: m.y - 10, text: '💥' });
+      for (const p of plist) if (Math.hypot(p.x - m.x, p.y - m.y) < 60) hurtPlayer(p, Math.round(def.atk * 0.7), def.name);
     }
     const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
     const was = m.moving;
@@ -1788,15 +1871,7 @@ setInterval(() => {
   if (mobsDirty) { mobsDirty = false; io.to(ROOM).volatile.emit('mobs', [...mobs.values()].map(pubMob)); }
 }, 100);
 
-// ❤️ 체력 회복 (마지막으로 맞고 6초 지나면, 던전 밖에서 더 빨리)
-setInterval(() => {
-  const now = Date.now();
-  for (const p of Object.values(players)) {
-    const mx = maxOf(p);
-    if (p.hp > mx) { p.hp = mx; sendHp(p); continue; }
-    if (p.hp < mx && now - (p.lastHit || 0) > 6000) { p.hp = Math.min(mx, p.hp + Math.max(2, Math.round(mx * (inDungeon(p) ? 0.01 : 0.04)))); sendHp(p); }
-  }
-}, 1000);
+// ❤️ 체력은 저절로 차지 않아요 (요리·물약으로만 회복)
 
 async function saveAll() {
   try {

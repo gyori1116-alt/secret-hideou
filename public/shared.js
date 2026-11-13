@@ -331,6 +331,10 @@
     ecto: { name: '유령 가루', sell: 18, desc: '2성 던전. 무기 재료' },
     fire_core: { name: '불꽃 핵', sell: 40, desc: '3성 던전. 강화 재료' },
     dragon_scale: { name: '용비늘', sell: 200, desc: '드래곤에게서만. 최고급 강화 재료' },
+    // 전직 퀘스트 아이템 (전직 퀘스트를 하는 동안만 나와요)
+    slime_core: { name: '슬라임의 핵', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 슬라임' },
+    bat_wing: { name: '박쥐 날개', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 박쥐' },
+    crown_shard: { name: '킹슬라임 왕관 조각', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 보스' },
   };
   // ── 갑옷 (마인크래프트처럼 투구·갑옷·바지·신발 × 가죽·철·금·수정) ──
   const ARMOR_TIERS = {
@@ -1215,15 +1219,42 @@
   const JOB_LV = 10, JOB_RESET_COST = 5000;
   const JOBS = {
     novice: { name: '모험가', icon: '🧭', desc: '처음엔 누구나 모험가! 목검과 활을 쓸 수 있어요. Lv.10부터 전직해요.' },
+    // 전직 퀘스트 5단계: 1~2단계 = 모으기(stat, 단계를 시작한 뒤부터 센 개수) / 3~5단계 = 1성 던전 몬스터가 주는 퀘스트 아이템(item, 가방에 모아서 제출)
     knight: { name: '기사', icon: '🛡️', weapon: 'sword', hp: 40, def: 2, desc: '검으로 앞의 적들을 한꺼번에 베어요. 체력 +40, 방어력 +2',
-      quest: [{ stat: 'kill', n: 15, t: '던전 몬스터 15마리 처치' }, { stat: 'iron', n: 10, t: '철광석 10개 캐기' }], reward: { iron_sword: 1 } },
+      stages: [
+        [{ stat: 'wood', n: 20, t: '나무 20개 모으기' }, { stat: 'stone', n: 15, t: '돌 15개 모으기' }],
+        [{ stat: 'iron', n: 5, t: '철광석 5개 캐기' }, { stat: 'stone', n: 25, t: '돌 25개 더 모으기' }],
+        [{ item: 'slime_core', n: 5, t: '슬라임에게서 슬라임의 핵 5개 얻어 오기' }],
+        [{ item: 'bat_wing', n: 5, t: '박쥐에게서 박쥐 날개 5개 얻어 오기' }, { item: 'slime_core', n: 3, t: '슬라임의 핵 3개 더' }],
+        [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
+      ], reward: { iron_sword: 1 } },
     archer: { name: '궁수', icon: '🏹', weapon: 'bow', speed: 0.75, desc: '멀리서 화살을 쏴요. 공격 속도 +25%, 사거리가 길어요',
-      quest: [{ stat: 'bowHit', n: 30, t: '활로 30번 맞히기 (동물·몬스터)' }, { stat: 'wood', n: 40, t: '나무 40개 모으기' }], reward: { long_bow: 1 } },
+      stages: [
+        [{ stat: 'wood', n: 30, t: '나무 30개 모으기' }, { stat: 'berry', n: 5, t: '산딸기 5개 따기' }],
+        [{ stat: 'stone', n: 15, t: '돌 15개 모으기' }, { stat: 'hunt', n: 2, t: '야생 동물 2마리 사냥' }],
+        [{ item: 'bat_wing', n: 5, t: '박쥐에게서 박쥐 날개 5개 얻어 오기' }],
+        [{ item: 'slime_core', n: 5, t: '슬라임에게서 슬라임의 핵 5개 얻어 오기' }, { item: 'bat_wing', n: 3, t: '박쥐 날개 3개 더' }],
+        [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
+      ], reward: { long_bow: 1 } },
     mage: { name: '마법사', icon: '🔮', weapon: 'staff', desc: '마법 구슬이 터지면서 주변 적들에게도 피해를 줘요',
-      quest: [{ stat: 'kill', n: 15, t: '던전 몬스터 15마리 처치' }, { stat: 'gem', n: 2, t: '수정 2개 캐기' }], reward: { staff_basic: 1 } },
+      stages: [
+        [{ stat: 'mushroom', n: 5, t: '버섯 5개 따기' }, { stat: 'stone', n: 20, t: '돌 20개 모으기' }],
+        [{ stat: 'wood', n: 20, t: '나무 20개 모으기' }, { stat: 'cook', n: 2, t: '요리 2번 하기' }],
+        [{ item: 'slime_core', n: 6, t: '슬라임에게서 슬라임의 핵 6개 얻어 오기' }],
+        [{ item: 'bat_wing', n: 4, t: '박쥐에게서 박쥐 날개 4개 얻어 오기' }, { item: 'slime_gel', n: 5, t: '슬라임 젤리 5개' }],
+        [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
+      ], reward: { staff_basic: 1 } },
     ninja: { name: '닌자', icon: '🥷', weapon: 'ninja', crit: 0.3, desc: '아주 빠른 쿠나이·닌자도 공격. 치명타 30% (피해 2배)',
-      quest: [{ stat: 'hunt', n: 5, t: '야생 동물 5마리 사냥' }, { stat: 'kill', n: 20, t: '던전 몬스터 20마리 처치' }], reward: { kunai: 1 } },
+      stages: [
+        [{ stat: 'wood', n: 20, t: '나무 20개 모으기' }, { stat: 'hunt', n: 2, t: '야생 동물 2마리 사냥' }],
+        [{ stat: 'stone', n: 20, t: '돌 20개 모으기' }, { stat: 'berry', n: 5, t: '산딸기 5개 따기' }],
+        [{ item: 'bat_wing', n: 6, t: '박쥐에게서 박쥐 날개 6개 얻어 오기' }],
+        [{ item: 'slime_core', n: 4, t: '슬라임에게서 슬라임의 핵 4개 얻어 오기' }, { item: 'bat_wing', n: 2, t: '박쥐 날개 2개 더' }],
+        [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
+      ], reward: { kunai: 1 } },
   };
+  // 퀘스트 아이템이 나오는 몬스터 (그 아이템이 필요한 단계를 진행 중일 때만)
+  const QUEST_DROPS = { slime: ['slime_core', 0.45], bat: ['bat_wing', 0.45], king_slime: ['crown_shard', 1] };
   // 무기 종류: cd 공격 간격(ms), range 사거리(px)
   const WEAPONS = { sword: { name: '검', cd: 520, range: 26 }, bow: { name: '활', cd: 560, range: 7 * TILE }, staff: { name: '지팡이', cd: 850, range: 6 * TILE, splash: 24 }, ninja: { name: '닌자 무기', cd: 300, range: 22 } };
   const maxHp = (lv, job) => 100 + 8 * ((lv || 1) - 1) + ((JOBS[job] || {}).hp || 0);
@@ -1402,6 +1433,16 @@
   // 새 업데이트를 할 때 맨 앞에 하나 추가하면, 서버가 켜질 때 채팅으로 알리고 게시판 버튼에 🆕 가 떠요.
   const UPDATES = [
     {
+      v: 'v7.1', date: '2026-11-13', title: '전투 다듬기 · 전직 퀘스트 5단계',
+      items: [
+        '❗ 몬스터가 공격하기 전에 머리 위에 빨간 느낌표를 띄우고 잠깐 멈춰요. 그 사이에 피하면 안 맞아요',
+        '💥 보스 내려찍기는 바닥의 빨간 원으로 미리 알려줘요. 원이 다 차기 전에 빠져나오세요',
+        '🎯 커서로 몬스터를 가리키고 공격하면, 사거리 안이면 그 몬스터에게 확실히 맞아요',
+        '❤️ 체력은 저절로 차지 않아요. 요리나 물약을 먹어서 회복해요 (다시 접속해도 체력은 그대로)',
+        '📜 전직 퀘스트가 5단계가 됐어요: 1~2단계 재료 모으기 → 3~5단계 1성 던전 몬스터의 퀘스트 아이템(슬라임의 핵·박쥐 날개·킹슬라임 왕관 조각)',
+      ],
+    },
+    {
       v: 'v7', date: '2026-11-13', title: '던전 · 전직 · 장비 · 강화 · 칭호 대규모 업데이트',
       items: [
         '🗺️ 지도가 넓어졌어요! 상점이 가로 한가운데에 오도록 왼쪽으로 넓히고, 위쪽은 전부 던전 지대예요 (지은 집은 그대로 옮겼어요)',
@@ -1457,7 +1498,7 @@
     UPDATES,
     TILE, OW, OH, W, H, CY, BX, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
     hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, maxPets, zoneAt,
-    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
+    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, QUEST_DROPS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
     MAX_EN, ENHANCE, MOBS, BOSS_SHARE, BOSS_RARE, MOB_RESPAWN, BOSS_RESPAWN, TITLES, titleOk,
     expToNext, levelInfo, EXP, invSize, levelUnlocks, shopLv, MVP_CATS, MVP_STAT, MVP_PRIZE, NATURAL, upgradeV4, removeTownBorder,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,

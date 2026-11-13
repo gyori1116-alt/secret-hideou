@@ -417,6 +417,10 @@
   socket.on('mobs', syncMobs);
   socket.on('dmg', (d) => dmgs.push(Object.assign(d, { t: performance.now() })));
   socket.on('slash', (d) => slashes.push(Object.assign(d, { t: performance.now() })));
+  // 몬스터 공격 예고(❗) · 보스 내려찍기 예고(빨간 원)
+  socket.on('matk', ({ id, ms }) => { if (mobs[id]) mobs[id].windUntil = performance.now() + ms; });
+  const stomps = [];
+  socket.on('mstomp', (d) => stomps.push(Object.assign(d, { t: performance.now() })));
   socket.on('teleport', ({ x, y }) => { me.x = x; me.y = y; me.pose = null; fishing = null; if (players[myId]) { players[myId].x = players[myId].dx = x; players[myId].y = players[myId].dy = y; } });
   let myHp = 100, myMaxHp = 100, myDef = 0;
   const showHp = () => { $('hpText').textContent = `❤️ ${myHp}`; $('hpBar').style.width = `${Math.max(0, myHp / myMaxHp * 100)}%`; $('hpBox').title = `체력 ${myHp} / ${myMaxHp} · 방어력 ${myDef}`; };
@@ -565,12 +569,13 @@
     }
     if (def.weapon) {
       // ⚔️ 무기: 마우스(또는 톡 한 곳) 쪽으로, 아니면 바라보는 쪽으로 공격
-      let ax, ay;
+      let ax, ay, tx, ty;
       if (mouse.in && performance.now() - mouse.t < 4000) {
-        ax = mouse.sx * dpr / Sc + cam.x - me.x; ay = mouse.sy * dpr / Sc + cam.y - (me.y - 8);
+        tx = mouse.sx * dpr / Sc + cam.x; ty = mouse.sy * dpr / Sc + cam.y; // 🎯 커서가 가리킨 곳
+        ax = tx - me.x; ay = ty - (me.y - 8);
         me.dir = Math.abs(ax) > Math.abs(ay) ? (ax < 0 ? 'left' : 'right') : (ay < 0 ? 'up' : 'down');
       } else [ax, ay] = DIRV[me.dir];
-      socket.emit('attack', { ax, ay });
+      socket.emit('attack', { ax, ay, tx, ty });
       return;
     }
     if (def.tool === 'bow') {
@@ -1119,23 +1124,29 @@
       return;
     }
     if (my.jobQuest) {
-      const J = S.JOBS[my.jobQuest.cls];
-      const prog = J.quest.map((q) => [q, Math.min(q.n, Math.max(0, (my.stats[q.stat] || 0) - (my.jobQuest.base[q.stat] || 0)))]);
-      const done = prog.every(([q, v]) => v >= q.n);
-      body.append(el('div', { class: 'qhead' }, el('b', {}, `${J.icon} ${J.name} 전직 퀘스트`), el('small', {}, J.desc)));
+      const jq = my.jobQuest, J = S.JOBS[jq.cls];
+      const stage = Number.isInteger(jq.stage) ? jq.stage : 0, last = J.stages.length - 1;
+      const tasks = J.stages[stage];
+      const prog = tasks.map((q) => [q, Math.min(q.n, q.item ? S.countItem(my.inv, q.item) : Math.max(0, (my.stats[q.stat] || 0) - ((jq.base || {})[q.stat] || 0)))]);
+      const done = Number.isInteger(jq.stage) && prog.every(([q, v]) => v >= q.n);
+      body.append(el('div', { class: 'qhead' }, el('b', {}, `${J.icon} ${J.name} 전직 퀘스트 · ${stage + 1} / ${J.stages.length}단계`),
+        el('div', { class: 'stagebar' }, J.stages.map((_, i) => el('span', { class: i < stage ? 'on' : i === stage ? 'cur' : '' }, i + 1))),
+        el('small', {}, stage < 2 ? '1~2단계: 재료 모으기 (이 단계를 시작한 뒤부터 세요)' : '3~5단계: 1성 던전(Lv.5) 몬스터가 떨어뜨리는 퀘스트 아이템을 가져와요 (전직 퀘스트 중에만 나와요)')));
       const rows = el('div', { class: 'rows' });
       prog.forEach(([q, v]) => rows.append(el('div', { class: 'row q' + (v >= q.n ? ' ready' : '') },
+        q.item ? iconImg(q.item) : null,
         el('div', { class: 'grow' }, q.t, el('div', { class: 'bar' }, el('i', { style: `width:${v / q.n * 100}%` })), el('small', {}, `${v} / ${q.n}`)))));
-      body.append(rows, el('p', { class: 'note', style: 'margin-top:10px' }, `🎁 보상: ${Object.keys(J.reward).map(itemName).join(', ')} + 칭호 「${J.name}」 + ⭐300`),
+      body.append(rows, el('p', { class: 'note', style: 'margin-top:10px' }, stage === last ? `🎁 전직 보상: ${Object.keys(J.reward).map(itemName).join(', ')} + 칭호 「${J.name}」 + ⭐300` : `다음 단계로 가면 ⭐${40 * (stage + 1)}`),
         el('div', { class: 'pick-row' },
-          done ? claimBtn(J.reward, () => socket.emit('jobComplete')) : el('button', { class: 'btn', disabled: true }, '퀘스트를 깨면 전직!'),
-          el('button', { class: 'btn', onclick: () => { if (confirm('전직 퀘스트를 그만둘까요?')) socket.emit('jobCancel'); } }, '그만두기')));
+          done ? (stage === last ? claimBtn(J.reward, () => socket.emit('jobComplete')) : el('button', { class: 'btn pink', onclick: () => socket.emit('jobComplete') }, `✅ ${stage + 1}단계 완료 → ${stage + 2}단계로`))
+            : el('button', { class: 'btn', disabled: true }, stage === last ? '5단계를 깨면 전직!' : '이번 단계를 깨면 다음으로'),
+          el('button', { class: 'btn', onclick: () => { if (confirm('전직 퀘스트를 그만둘까요? (처음부터 다시 해야 해요)')) socket.emit('jobCancel'); } }, '그만두기')));
       return;
     }
     body.append(el('p', { class: 'note' }, li.lv >= S.JOB_LV ? '어떤 길로 갈까요? 직업을 고르면 전직 퀘스트가 시작돼요.' : `🔒 레벨 ${S.JOB_LV}부터 전직할 수 있어요 (지금 Lv.${li.lv}). 그 전엔 목검·활로 1성 던전(Lv.5)에서 연습해요!`));
     body.append(el('div', { class: 'jobgrid' }, Object.entries(S.JOBS).filter(([k]) => k !== 'novice').map(([k, J]) => el('div', { class: 'jobcard' },
       el('b', {}, `${J.icon} ${J.name}`), el('small', {}, J.desc),
-      el('small', { style: 'opacity:.7' }, '퀘스트: ' + J.quest.map((q) => q.t).join(' / ')),
+      el('small', { style: 'opacity:.7' }, `전직 퀘스트 ${J.stages.length}단계: 1~2 모으기 → 3~5 1성 던전 퀘스트 아이템`),
       el('button', { class: 'btn pink', disabled: li.lv < S.JOB_LV, onclick: () => socket.emit('jobStart', { cls: k }) }, '이 길로!')))));
   }
 
@@ -1612,8 +1623,15 @@
         // ⚔️ 몬스터 + 체력 바
         const mb = d.mb, def = S.MOBS[mb.kind];
         if (mb.hurt && Math.floor(now / 70) % 2) ctx.globalAlpha = 0.5;
+        const winding = mb.windUntil && now < mb.windUntil;
+        if (winding) { ctx.save(); ctx.translate(Math.round(mb.dx), Math.round(mb.dy)); ctx.scale(1.08, 0.94); ctx.translate(-Math.round(mb.dx), -Math.round(mb.dy)); }
         D.drawMob(ctx, Math.round(mb.dx), Math.round(mb.dy), mb.kind, mb.dir, mb.moving ? Math.floor(now / 160) % 2 : -1, now);
+        if (winding) ctx.restore();
         ctx.globalAlpha = 1;
+        if (winding) { // ❗ 공격 예고
+          const ey = Math.round(mb.dy) - (def.boss ? 58 : 30) + Math.sin(now / 50);
+          ctx.fillStyle = '#e8364f'; ctx.fillRect(Math.round(mb.dx) - 2, ey, 4, 8); ctx.fillRect(Math.round(mb.dx) - 2, ey + 10, 4, 3);
+        }
         const bw = def.boss ? 30 : 14, by = Math.round(mb.dy) - (def.boss ? 46 : 22);
         ctx.fillStyle = '#2b2233'; ctx.fillRect(Math.round(mb.dx) - bw / 2 - 1, by - 1, bw + 2, 4);
         ctx.fillStyle = def.boss ? '#ff5c5c' : '#e85d5d'; ctx.fillRect(Math.round(mb.dx) - bw / 2, by, bw * mb.hp / 100, 2);
@@ -1629,6 +1647,15 @@
           ctx.save(); ctx.translate(bx, by); ctx.scale(0.75, 0.75); D.drawItem(ctx, 0, 0, id); ctx.restore();
         }
       }
+    }
+    // 💥 보스 내려찍기 예고: 원이 차오르면 쾅!
+    for (let i = stomps.length - 1; i >= 0; i--) {
+      const st = stomps[i], k = (now - st.t) / st.ms;
+      if (k > 1.15) { stomps.splice(i, 1); continue; }
+      ctx.strokeStyle = 'rgba(232,54,79,0.9)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(st.x, st.y - 2, st.r, st.r * 0.55, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = `rgba(232,54,79,${k > 1 ? 0.5 : 0.25})`;
+      ctx.beginPath(); ctx.ellipse(st.x, st.y - 2, st.r * Math.min(1, k), st.r * 0.55 * Math.min(1, k), 0, 0, Math.PI * 2); ctx.fill();
     }
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i], age = (now - a.t) / 220;
