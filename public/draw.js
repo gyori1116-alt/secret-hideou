@@ -1325,7 +1325,7 @@
     wood_sword: ['#c99558', '#8b5a3c'], iron_sword: ['#c4ced6', '#6e4626'], knight_sword: ['#e6f0ff', '#d4a017'], hero_sword: ['#ffe27a', '#c0392b'],
     long_bow: ['#8b5a3c', '#ffffff'], elf_bow: ['#7ed492', '#ffffff'], phoenix_bow: ['#ff7a1a', '#ffe066'],
     staff_basic: ['#a8743f', '#7fdcff'], crystal_staff: ['#c9c9d3', '#b48cff'], arch_staff: ['#4a3b5c', '#ff5c8a'],
-    kunai: ['#9aa7b0', '#3b3740'], ninja_blade: ['#c4ced6', '#2b2233'], shadow_blade: ['#6c3fb5', '#2b2233'],
+    kunai: ['#9aa7b0', '#3b3740'], ninja_blade: ['#e6f0ff', '#2b2233'], shadow_blade: ['#8a5cd6', '#2b2233'],
   };
   function drawWeapon(R, id, it) {
     const [a, b] = WEAPON_COL[id] || ['#c4ced6', '#6e4626'];
@@ -1346,8 +1346,14 @@
         R(b, 10, 1, 5, 5); R('#ffffff', 11, 2, 2, 2); R(shade(b, -0.3), 10, 5, 5, 1);
         break;
       case 'ninja':
-        if (id === 'kunai') { R(a, 8, 2, 3, 3); R(a, 7, 5, 3, 3); R(a, 6, 7, 2, 2); R(b, 4, 9, 3, 4); R('#c4ced6', 2, 12, 3, 3); R('#ffffff', 3, 13, 1, 1); }
-        else { for (let i = 0; i < 9; i++) R(a, 5 + i, 9 - i, 2, 1); R(b, 3, 10, 4, 4); R('#e85d5d', 2, 9, 6, 1); }
+        { // 🥷 표창: 날 네 개 + 가운데 구멍 (강철·그림자는 날이 더 길어요)
+          const L = id === 'kunai' ? 4 : 5, d = shade(a, -0.3);
+          R(a, 6, 6, 4, 4);
+          R(a, 7, 6 - L, 2, L); R(a, 7, 10, 2, L); R(a, 6 - L, 7, L, 2); R(a, 10, 7, L, 2);
+          R(d, 8, 6 - L, 1, L); R(d, 7, 10, 1, L); R(d, 6 - L, 8, L, 1); R(d, 10, 7, L, 1);
+          R(b, 7, 7, 2, 2);
+          if (id === 'shadow_blade') { R('#e6d9ff', 7, 6 - L, 1, 1); R('#e6d9ff', 8, 9 + L, 1, 1); }
+        }
         break;
     }
   }

@@ -307,7 +307,7 @@
     bread_basket: { name: '빵 바구니', obj: 'bread_basket', cat: 'furniture', desc: '테이블 위에 올려요 🥐' },
     floor_cafe: { name: '카페 바닥', ground: 'floor_cafe', cat: 'floor', desc: '흑백 체크 타일' },
 
-    // ── v7 무기 (weapon: sword 검 / bow 활 / staff 지팡이 / ninja 쿠나이·닌자도, cls: 그 직업만 사용) ──
+    // ── v7 무기 (weapon: sword 검 / bow 활 / staff 지팡이 / ninja 표창, cls: 그 직업만 사용) ──
     wood_sword: { name: '목검', weapon: 'sword', atk: 4, stack: 1, desc: '누구나 쓸 수 있는 연습용 검. 앞의 적을 베어요' },
     iron_sword: { name: '철검', weapon: 'sword', atk: 9, cls: 'knight', stack: 1, desc: '기사의 검' },
     knight_sword: { name: '기사의 검', weapon: 'sword', atk: 16, cls: 'knight', stack: 1, desc: '빛나는 기사의 검' },
@@ -318,9 +318,10 @@
     staff_basic: { name: '견습 지팡이', weapon: 'staff', atk: 6, cls: 'mage', stack: 1, desc: '마법사의 지팡이. 터지면서 주변에도 피해' },
     crystal_staff: { name: '수정 지팡이', weapon: 'staff', atk: 13, cls: 'mage', stack: 1, desc: '수정이 박힌 지팡이' },
     arch_staff: { name: '대마법사의 지팡이', weapon: 'staff', atk: 22, cls: 'mage', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
-    kunai: { name: '쿠나이', weapon: 'ninja', atk: 6, cls: 'ninja', stack: 1, desc: '닌자의 쿠나이. 빠르고 치명타가 나와요' },
-    ninja_blade: { name: '닌자도', weapon: 'ninja', atk: 12, cls: 'ninja', stack: 1, desc: '날카로운 닌자도' },
-    shadow_blade: { name: '그림자 닌자도', weapon: 'ninja', atk: 20, cls: 'ninja', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
+    // (아이템 id는 저장 데이터 때문에 예전 이름 그대로: kunai=표창, ninja_blade=강철 표창, shadow_blade=그림자 표창)
+    kunai: { name: '표창', weapon: 'ninja', atk: 6, cls: 'ninja', stack: 1, desc: '닌자의 표창. 가까운 적에게 아주 빠르게 던지고 치명타가 나와요' },
+    ninja_blade: { name: '강철 표창', weapon: 'ninja', atk: 12, cls: 'ninja', stack: 1, desc: '날이 넷 달린 단단한 표창' },
+    shadow_blade: { name: '그림자 표창', weapon: 'ninja', atk: 20, cls: 'ninja', stack: 1, desc: '3성 던전 보스에게서만 나와요 ✨' },
     // 물약 (Space로 마시면 체력 회복)
     potion_s: { name: '작은 물약', heal: 60, sell: 8, desc: '체력 60 회복' },
     potion_m: { name: '중간 물약', heal: 180, sell: 25, desc: '체력 180 회복' },
@@ -1244,7 +1245,7 @@
         [{ item: 'bat_wing', n: 4, t: '박쥐에게서 박쥐 날개 4개 얻어 오기' }, { item: 'slime_gel', n: 5, t: '슬라임 젤리 5개' }],
         [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
       ], reward: { staff_basic: 1 } },
-    ninja: { name: '닌자', icon: '🥷', weapon: 'ninja', crit: 0.3, desc: '아주 빠른 쿠나이·닌자도 공격. 치명타 30% (피해 2배)',
+    ninja: { name: '닌자', icon: '🥷', weapon: 'ninja', crit: 0.3, desc: '가까운 적에게 표창을 아주 빠르게 던져요. 치명타 30% (피해 2배)',
       stages: [
         [{ stat: 'wood', n: 20, t: '나무 20개 모으기' }, { stat: 'hunt', n: 2, t: '야생 동물 2마리 사냥' }],
         [{ stat: 'stone', n: 20, t: '돌 20개 모으기' }, { stat: 'berry', n: 5, t: '산딸기 5개 따기' }],
@@ -1253,10 +1254,23 @@
         [{ item: 'crown_shard', n: 1, t: '킹슬라임을 쓰러뜨리고 왕관 조각 얻어 오기' }],
       ], reward: { kunai: 1 } },
   };
+  // 예전(1단계짜리) 전직 퀘스트 조건: base에 남아 있는 통계별 목표 개수
+  const LEGACY_JOB_GOAL = { hunt: 5, kill: 20 };
+  const LEGACY_JOB_NAME = { hunt: '야생 동물 사냥', kill: '던전 몬스터 처치' };
+  function legacyJobTasks(jq, stats) {
+    return Object.keys((jq && jq.base) || {}).map((k) => {
+      const n = LEGACY_JOB_GOAL[k] || 5;
+      return { stat: k, n, t: `${LEGACY_JOB_NAME[k] || k} ${n}`, v: Math.max(0, ((stats || {})[k] || 0) - (jq.base[k] || 0)) };
+    });
+  }
+  function legacyJobDone(jq, stats) {
+    const t = legacyJobTasks(jq, stats);
+    return t.length > 0 && t.every((q) => q.v >= q.n);
+  }
   // 퀘스트 아이템이 나오는 몬스터 (그 아이템이 필요한 단계를 진행 중일 때만)
   const QUEST_DROPS = { slime: ['slime_core', 0.45], bat: ['bat_wing', 0.45], king_slime: ['crown_shard', 1] };
   // 무기 종류: cd 공격 간격(ms), range 사거리(px)
-  const WEAPONS = { sword: { name: '검', cd: 520, range: 26 }, bow: { name: '활', cd: 560, range: 7 * TILE }, staff: { name: '지팡이', cd: 850, range: 6 * TILE, splash: 24 }, ninja: { name: '닌자 무기', cd: 300, range: 22 } };
+  const WEAPONS = { sword: { name: '검', cd: 520, range: 26 }, bow: { name: '활', cd: 560, range: 7 * TILE }, staff: { name: '지팡이', cd: 850, range: 6 * TILE, splash: 24 }, ninja: { name: '표창', cd: 300, range: 3 * TILE } };
   const maxHp = (lv, job) => 100 + 8 * ((lv || 1) - 1) + ((JOBS[job] || {}).hp || 0);
   function armorDef(equip, job) {
     let d = (JOBS[job] || {}).def || 0;
@@ -1449,7 +1463,7 @@
         '⚔️ 던전 3곳: ⭐1성 슬라임 동굴(Lv.5) · ⭐⭐2성 해골 묘지(Lv.12) · ⭐⭐⭐3성 용암 성채(Lv.20). 문 앞에서 E로 입장',
         '👑 보스(킹슬라임·해골 기사·드래곤)는 가장 많이 때린 1~3등만 보상! 처치하면 채팅에 딜량 순위와 입힌 피해를 알려줘요',
         '❤️ 체력이 생겼어요. 쓰러지면 마을에서 다시 시작(잃는 건 없어요). 물약·요리로 회복',
-        '🧭 Lv.10부터 마을 전직 교관에게서 전직 퀘스트: 🛡️ 기사(검) · 🏹 궁수(활) · 🔮 마법사(지팡이) · 🥷 닌자(쿠나이·닌자도)',
+        '🧭 Lv.10부터 마을 전직 교관에게서 전직 퀘스트: 🛡️ 기사(검) · 🏹 궁수(활) · 🔮 마법사(지팡이) · 🥷 닌자(표창)',
         '🗡️ 직업마다 무기 3단계 (만들기 2단계 + 3성 보스 전설 무기)',
         '🔨 마을 대장간(모루)에서 무기 강화 +1 ~ +10 (실패해도 안 부서져요)',
         '🛡️ 마인크래프트처럼 갑옷 4부위 × 가죽·철·금·수정! 장착하면 캐릭터에도 보여요',
@@ -1498,7 +1512,7 @@
     UPDATES,
     TILE, OW, OH, W, H, CY, BX, WORLD_VERSION, REACH, BITE_WINDOW, SAPLING_MS, SPAWN, QUEST_ONLY,
     hash, strHash, ITEMS, GROUND, OBJ, WALLS, isSolidObj, canRotate, ROT_NAMES, ROT_DIRS, CROPS, FEED, ANIMALS, WILD_SPAWN, BOW_RANGE, maxPets, zoneAt,
-    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, QUEST_DROPS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
+    TX, TY, W0, H0, dungeonStar, DUNGEONS, toV7, ARMOR_TIERS, ARMOR_PARTS, JOB_LV, JOB_RESET_COST, JOBS, legacyJobTasks, legacyJobDone, QUEST_DROPS, WEAPONS, maxHp, armorDef, dmgTaken, weaponAtk, itemLabel,
     MAX_EN, ENHANCE, MOBS, BOSS_SHARE, BOSS_RARE, MOB_RESPAWN, BOSS_RESPAWN, TITLES, titleOk,
     expToNext, levelInfo, EXP, invSize, levelUnlocks, shopLv, MVP_CATS, MVP_STAT, MVP_PRIZE, NATURAL, upgradeV4, removeTownBorder,
     FISH_TABLE, FISH_TABLES, rollFish, SHOP, SHOP_TABS, RECIPES, COOK, FOOD_BUFF_MS, QUESTS,

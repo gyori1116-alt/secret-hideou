@@ -903,7 +903,7 @@ function killMob(m, killer) {
   for (const [k] of rank.slice(3)) { const q = Object.values(players).find((x) => x.key === k); if (q) toast(q.socket, `${def.name} 처치에 참여했어요! (보상은 딜량 1~3등만)`); }
   profilesDirty = true;
 }
-// 공격: 들고 있는 무기 종류에 따라 (검: 앞쪽 여러 명 / 활: 화살 / 지팡이: 터지는 마법 / 닌자: 빠른 한 명 + 치명타)
+// 공격: 들고 있는 무기 종류에 따라 (검: 앞쪽 여러 명 / 활: 화살 / 지팡이: 터지는 마법 / 닌자: 짧게 날아가는 빠른 표창 + 치명타)
 function doAttack(p, ax, ay, aimX, aimY) {
   const pr = p.prof, now = Date.now();
   const it = pr.inv[p.sel | 0], def = it && S.ITEMS[it.id];
@@ -940,8 +940,8 @@ function doAttack(p, ax, ay, aimX, aimY) {
     const clear = (tx, ty) => { const d = Math.hypot(tx - x0, ty - y0); for (let s = 6; s < d - 6; s += 4) { const px = x0 + (tx - x0) * s / d, py = y0 + (ty - y0) * s / d; if (S.isSolidObj(getO(Math.floor(px / TILE), Math.floor((py + 8) / TILE)))) return false; } return true; };
     if (tgt && clear(tgt.x, tgt.y)) {
       const d = Math.hypot(tgt.x - x0, tgt.y - y0) || 1; ax = (tgt.x - x0) / d; ay = (tgt.y - y0) / d;
-      if (def.weapon === 'sword' || def.weapon === 'ninja') io.to(ROOM).emit('slash', { id: p.id, x: x0, y: y0, ax, ay, kind: def.weapon });
-      else io.to(ROOM).emit('arrow', { x0, y0, x1: tgt.x, y1: tgt.y, magic: def.weapon === 'staff' ? 1 : 0 });
+      if (def.weapon === 'sword') io.to(ROOM).emit('slash', { id: p.id, x: x0, y: y0, ax, ay, kind: def.weapon });
+      else io.to(ROOM).emit('arrow', { x0, y0, x1: tgt.x, y1: tgt.y, magic: def.weapon === 'staff' ? 1 : 0, star: def.weapon === 'ninja' ? 1 : 0 });
       if (best) {
         hitMob(p, best.m, dmg, crit);
         if (def.weapon === 'bow') stat(p, 'bowHit');
@@ -952,19 +952,15 @@ function doAttack(p, ax, ay, aimX, aimY) {
       return;
     }
   }
-  if (def.weapon === 'sword' || def.weapon === 'ninja') {
-    const range = W.range, cone = def.weapon === 'sword' ? 0.15 : 0.45;
+  if (def.weapon === 'sword') {
+    const range = W.range, cone = 0.15;
     const inFront = (tx, ty) => { const dx = tx - x0, dy = ty - y0, d = Math.hypot(dx, dy); return d <= range && (d < 6 || (dx * ax + dy * ay) / d > cone); };
     const hitsM = [...mobs.values()].filter((m) => inFront(m.x, m.y - (S.MOBS[m.kind].boss ? 14 : 6)));
     const hitsA = wild.filter((a) => inFront(a.x, a.y - 6));
     io.to(ROOM).emit('slash', { id: p.id, x: x0, y: y0, ax, ay, kind: def.weapon });
-    if (def.weapon === 'sword') { hitsM.slice(0, 4).forEach((m) => hitMob(p, m, dmg, crit)); hitsA.slice(0, 2).forEach(animalHit); }
-    else {
-      const all = hitsM.map((m) => [m, Math.hypot(m.x - x0, m.y - y0)]).sort((a, b) => a[1] - b[1]);
-      if (all.length) hitMob(p, all[0][0], dmg, crit); else if (hitsA.length) animalHit(hitsA[0]);
-    }
+    hitsM.slice(0, 4).forEach((m) => hitMob(p, m, dmg, crit)); hitsA.slice(0, 2).forEach(animalHit);
   } else {
-    // 활·지팡이: 앞으로 날아가다 처음 만난 적
+    // 활·지팡이·표창: 앞으로 날아가다 처음 만난 적
     const range = W.range + (mine && def.weapon === 'bow' ? 2 * TILE : 0);
     let x1 = x0, y1 = y0, hitM = null, hitA = null;
     for (let d = 6; d <= range; d += 3) {
@@ -977,13 +973,13 @@ function doAttack(p, ax, ay, aimX, aimY) {
       for (const a of wild) if (Math.hypot(a.x - px, a.y - 5 - py) < 9) { hitA = a; break; }
       if (hitA) break;
     }
-    io.to(ROOM).emit('arrow', { x0, y0, x1, y1, magic: def.weapon === 'staff' ? 1 : 0 });
+    io.to(ROOM).emit('arrow', { x0, y0, x1, y1, magic: def.weapon === 'staff' ? 1 : 0, star: def.weapon === 'ninja' ? 1 : 0 });
     if (def.weapon === 'staff') {
       io.to(ROOM).emit('fx', { x: x1, y: y1, text: '✨' });
       for (const m of [...mobs.values()]) if (Math.hypot(m.x - x1, m.y - 6 - y1) < (hitM ? W.splash + 6 : W.splash)) hitMob(p, m, m === hitM ? dmg : Math.round(dmg * 0.6), crit);
       if (!hitM && hitA) animalHit(hitA);
     } else {
-      if (hitM || hitA) stat(p, 'bowHit');
+      if ((hitM || hitA) && def.weapon === 'bow') stat(p, 'bowHit');
       if (hitM) hitMob(p, hitM, dmg, crit); else if (hitA) animalHit(hitA);
     }
   }
@@ -1562,8 +1558,15 @@ io.on('connection', (socket) => {
     const p = me();
     const pr = p && p.prof, jq = pr && pr.jobQuest, J = jq && S.JOBS[jq.cls];
     if (!J || !J.stages) return;
-    if (!Number.isInteger(jq.stage)) { jq.stage = 0; jq.base = stageBase(pr, J.stages[0]); } // 예전 방식 퀘스트는 1단계부터
-    const tasks = J.stages[jq.stage];
+    const legacy = !Number.isInteger(jq.stage); // 예전(1단계짜리) 방식 퀘스트: 그때 조건을 다 깼으면 바로 전직
+    if (legacy && !S.legacyJobDone(jq, pr.stats)) {
+      jq.stage = 0; jq.base = stageBase(pr, J.stages[0]);
+      toast(socket, '예전 전직 퀘스트가 새 5단계 방식으로 바뀌었어요. 1단계부터 시작해요');
+      sendMe(p);
+      return;
+    }
+    if (legacy) jq.stage = J.stages.length - 1;
+    const tasks = legacy ? [] : J.stages[jq.stage];
     const ok = tasks.every((q) => (q.item ? S.countItem(pr.inv, q.item) >= q.n : (pr.stats[q.stat] || 0) - (jq.base[q.stat] || 0) >= q.n));
     if (!ok) return toast(socket, '아직 이번 단계를 다 못 깼어요');
     for (const q of tasks) if (q.item) S.removeItem(pr.inv, q.item, q.n);

@@ -1125,6 +1125,17 @@
     }
     if (my.jobQuest) {
       const jq = my.jobQuest, J = S.JOBS[jq.cls];
+      if (!Number.isInteger(jq.stage)) { // 예전(1단계짜리) 전직 퀘스트
+        const lt = S.legacyJobTasks(jq, my.stats), ldone = S.legacyJobDone(jq, my.stats);
+        body.append(el('div', { class: 'qhead' }, el('b', {}, `${J.icon} ${J.name} 전직 퀘스트`), el('small', {}, ldone ? '예전 퀘스트를 다 깼어요! 보상을 받으면 바로 전직해요' : '예전 퀘스트예요. 버튼을 누르면 새 5단계 퀘스트 1단계부터 시작해요')),
+          el('div', { class: 'rows' }, lt.map((q) => el('div', { class: 'row q' + (q.v >= q.n ? ' ready' : '') },
+            el('div', { class: 'grow' }, q.t, el('div', { class: 'bar' }, el('i', { style: `width:${Math.min(1, q.v / q.n) * 100}%` })), el('small', {}, `${Math.min(q.v, q.n)} / ${q.n}`))))),
+          el('p', { class: 'note', style: 'margin-top:10px' }, `🎁 전직 보상: ${Object.keys(J.reward).map(itemName).join(', ')} + 칭호 「${J.name}」 + ⭐300`),
+          el('div', { class: 'pick-row' },
+            ldone ? claimBtn(J.reward, () => socket.emit('jobComplete')) : el('button', { class: 'btn pink', onclick: () => socket.emit('jobComplete') }, '새 5단계 퀘스트로 바꾸기'),
+            el('button', { class: 'btn', onclick: () => { if (confirm('전직 퀘스트를 그만둘까요? (처음부터 다시 해야 해요)')) socket.emit('jobCancel'); } }, '그만두기')));
+        return;
+      }
       const stage = Number.isInteger(jq.stage) ? jq.stage : 0, last = J.stages.length - 1;
       const tasks = J.stages[stage];
       const prog = tasks.map((q) => [q, Math.min(q.n, q.item ? S.countItem(my.inv, q.item) : Math.max(0, (my.stats[q.stat] || 0) - ((jq.base || {})[q.stat] || 0)))]);
@@ -1667,11 +1678,19 @@
         ctx.fillStyle = '#e6d9ff'; ctx.fillRect(hx - 1.5, hy - 1.5, 3, 3);
         continue;
       }
+      if (a.star) { // 🥷 빙글빙글 도는 표창
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(age * 14);
+        ctx.fillStyle = '#c4ced6';
+        for (let k = 0; k < 4; k++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(-1.2, 0); ctx.lineTo(0, -4); ctx.lineTo(1.2, 0); ctx.fill(); }
+        ctx.fillStyle = '#3b3740'; ctx.fillRect(-1, -1, 2, 2);
+        ctx.restore();
+        continue;
+      }
       ctx.strokeStyle = '#7a4e2d'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(hx - ux * 7, hy - uy * 7); ctx.lineTo(hx, hy); ctx.stroke();
       ctx.fillStyle = '#9aa7b0'; ctx.fillRect(hx - 1, hy - 1, 2, 2);
     }
-    // ⚔️ 검·닌자 베기
+    // ⚔️ 검 베기
     for (let i = slashes.length - 1; i >= 0; i--) {
       const s = slashes[i], age = (now - s.t) / 180;
       if (age > 1) { slashes.splice(i, 1); continue; }
