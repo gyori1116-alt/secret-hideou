@@ -9,10 +9,13 @@
   const W0 = 100, H0 = 112, CY0 = 80, BX0 = 50;
   // v7: 왼쪽으로 TX칸, 위로 TY칸 넓혔어요 → 상점이 가로 한가운데, 위쪽 TY줄은 던전 지대
   const TX = 44, TY = 40;
-  const W = W0 + TX, H = H0 + TY;     // 144 × 152
+  const H7 = H0 + TY;                 // v7 지도 높이 (152)
+  // v8: 아래로 40줄 더 넓혀서 🌾 농장 · 🐄 목장을 따로 만들었어요. 장소마다 검은 경계(void)로 나뉘고 [🗺️ 이동] 버튼으로 오가요
+  const FY = H7 + 1;                  // 농장·목장이 시작하는 줄 (153)
+  const W = W0 + TX, H = H7 + 40;     // 144 × 192
   const CY = TY + CY0;                // 생산 구역(맨 아래)이 시작하는 줄
   const BX = TX + BX0;                // 생산 구역에서 동굴(왼쪽)과 숲(오른쪽)을 나누는 칸
-  const WORLD_VERSION = 7;
+  const WORLD_VERSION = 8;
   const REACH = 3.6 * TILE;           // 손이 닿는 거리
   const BITE_WINDOW = 1200;           // 찌가 흔들린 뒤 당길 수 있는 시간(ms)
   const SAPLING_MS = 60000;           // 묘목이 나무가 되는 시간
@@ -336,6 +339,17 @@
     slime_core: { name: '슬라임의 핵', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 슬라임' },
     bat_wing: { name: '박쥐 날개', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 박쥐' },
     crown_shard: { name: '킹슬라임 왕관 조각', questOnly: 1, desc: '전직 퀘스트 아이템 · 1성 던전 보스' },
+
+    // ── v8 ──
+    wall_black: { name: '검정 벽', obj: 'wall_black', cat: 'wall', desc: '새까만 벽. 모던한 집에 딱' },
+    ice_crystal: { name: '얼음 결정', sell: 70, desc: '4성 던전. 서리 갑옷 재료' },
+    abyss_shard: { name: '심연 조각', sell: 120, desc: '5성 던전. 심연 갑옷 재료' },
+    fish_mackerel: { name: '고등어', fish: 1, sell: 50, desc: '낚시터의 등 푸른 생선' },
+    fish_tuna: { name: '참치', fish: 1, sell: 180, desc: '낚시터의 큰 물고기!' },
+    abyss_sword: { name: '심연의 대검', weapon: 'sword', atk: 36, cls: 'knight', stack: 1, desc: '5성 던전 보스에게서만 나와요 ✨✨' },
+    star_bow: { name: '별빛 활', weapon: 'bow', atk: 34, cls: 'archer', stack: 1, desc: '5성 던전 보스에게서만 나와요 ✨✨' },
+    void_staff: { name: '공허의 지팡이', weapon: 'staff', atk: 31, cls: 'mage', stack: 1, desc: '5성 던전 보스에게서만 나와요 ✨✨' },
+    abyss_star: { name: '심연 표창', weapon: 'ninja', atk: 29, cls: 'ninja', stack: 1, desc: '5성 던전 보스에게서만 나와요 ✨✨' },
   };
   // ── 갑옷 (마인크래프트처럼 투구·갑옷·바지·신발 × 가죽·철·금·수정) ──
   const ARMOR_TIERS = {
@@ -343,6 +357,8 @@
     iron: { name: '철', mat: 'iron', lv: 8, def: [2, 5, 4, 2], col: '#c4ced6' },
     gold: { name: '금', mat: 'gold', lv: 14, def: [3, 6, 5, 3], col: '#f2c230' },
     crystal: { name: '수정', mat: 'gem', lv: 20, def: [4, 8, 6, 4], col: '#7fdcff' },
+    frost: { name: '서리', mat: 'ice_crystal', lv: 28, def: [5, 10, 8, 5], col: '#bfefff' },
+    abyss: { name: '심연', mat: 'abyss_shard', lv: 36, def: [6, 12, 10, 6], col: '#8a5cd6' },
   };
   const ARMOR_PARTS = [['helmet', '투구', 5], ['chest', '갑옷', 8], ['legs', '바지', 7], ['boots', '신발', 4]];
   for (const [tier, t] of Object.entries(ARMOR_TIERS)) ARMOR_PARTS.forEach(([part, pname], i) => {
@@ -356,8 +372,9 @@
   }
 
   // ───────── 바닥 / 블록 ─────────
+  // void: 장소와 장소 사이의 까만 경계 (못 지나가고, 못 바꿔요)
   const GROUND = {
-    grass: {}, water: { solid: 1 }, farm: {}, forest: {}, cave: {}, dungeon: {}, lava: { solid: 1 },
+    grass: {}, water: { solid: 1 }, farm: {}, forest: {}, cave: {}, dungeon: {}, lava: { solid: 1 }, void: { solid: 1, fixed: 1 }, pier: { fixed: 1 },
   };
   // solid: 못 지나가요 / fixed: 못 부숴요 / sit·lie: E로 앉기·눕기 / toggle: E로 켜고 끄기
   // cook: 요리 가능 / fx: E 누르면 뜨는 그림 / msg: E 누르면 뜨는 말 / light: 동굴에서 빛나는 반지름(칸)
@@ -416,6 +433,7 @@
     job_master: { solid: 1, fixed: 1 }, anvil: { solid: 1, fixed: 1 },
     crystal_lamp: { solid: 1, light: 5 }, scarecrow: { solid: 1 }, windmill: { solid: 1, anim: 1 }, deer_trophy: { solid: 1 },
     music_box: { solid: 1, fx: '🎶' },
+    npc: { solid: 1, fixed: 1 },          // 마을 사람 (그림은 화면에서 따로 그려요)
   };
   // 벽 색 (윗면, 앞면, 선)
   const WALLS = {
@@ -439,6 +457,7 @@
     wall_green: ['#cdebc4', '#9fd18f', '#6aa35a'],
     wall_purple: ['#e6dcff', '#c9b8ff', '#9580d6'],
     wall_wainscot: ['#fdfaf3', '#a5703f', '#7a4e2d'],
+    wall_black: ['#34343d', '#1c1c22', '#0a0a0e'],
   };
   for (const t in WALLS) OBJ[t] = Object.assign(OBJ[t] || {}, { solid: 1, wall: 1 });
   for (const id in ITEMS) {
@@ -501,20 +520,39 @@
   const maxPets = (lv) => Math.min(10, 2 + Math.floor((lv || 1) / 5));
 
   // ───────── 지역 ─────────
-  // 지역: dungeon(맨 위) / town(마을) / meadow(집 짓는 땅) / cave·forest(맨 아래 생산 구역)
-  const zoneAt = (x, y) => {
-    if (y < TY) return 'dungeon';
-    if (y >= CY) return x < TX ? 'forest' : x < BX ? 'cave' : 'forest';
-    if (x >= TX && x < TX + OW && y < TY + OH) return 'town';
-    return 'meadow';
+  // ───────── 🗺️ 장소 (v8) ─────────
+  // 한 지도 안에 네모로 나뉜 장소들. 사이는 까만 경계(void)라서 걸어서는 못 가고 [🗺️ 이동] 버튼으로 가요.
+  // x0·y0·x1·y1 = 장소 안쪽 칸 (끝 칸 포함), spawn = 이동했을 때 서는 칸
+  const PLACES = {
+    village: { name: '🏠 마을', x0: 0, y0: TY, x1: W - 1, y1: CY - 2, spawn: [31.5 + TX, 19.5 + TY], desc: '상점·게시판·마을 사람들·집 짓는 땅' },
+    dungeon: { name: '⚔️ 던전', x0: 0, y0: 0, x1: W - 1, y1: TY - 2, spawn: [56.5, TY - 4.2], desc: '1성~5성 던전 입구가 모여 있는 곳' },
+    farm: { name: '🌾 농장', x0: 0, y0: FY, x1: 71, y1: H - 1, spawn: [35.5, FY + 4.8], desc: '넓은 밭. 괭이·씨앗·물뿌리개로 농사' },
+    ranch: { name: '🐄 목장', x0: 73, y0: FY, x1: W - 1, y1: H - 1, spawn: [108.5, FY + 4.8], desc: '닭·소·양·오리·염소·돼지가 사는 목장' },
+    forest: { name: '🌲 숲', x0: BX + 1, y0: CY, x1: W - 1, y1: H7 - 1, spawn: [119.5, CY + 4.8], desc: '나무·버섯·산딸기, 사슴·멧돼지, 송어 낚시' },
+    mine: { name: '⛏ 광산', x0: TX, y0: CY, x1: BX - 1, y1: H7 - 1, spawn: [75.5, CY + 4.8], desc: '어두운 동굴. 돌·철·금·수정 캐기' },
+    fishing: { name: '🎣 낚시터', x0: 0, y0: CY, x1: TX - 2, y1: H7 - 1, spawn: [21.5, CY + 4.8], desc: '큰 호수. 고등어·참치 같은 귀한 물고기' },
   };
-  const dungeonStar = (x) => (x < 48 ? 1 : x < 96 ? 2 : 3);  // 던전 지대에서 몇 성 던전인지
+  const PLACE_ORDER = ['village', 'dungeon', 'farm', 'ranch', 'forest', 'mine', 'fishing'];
+  const placeAt = (x, y) => {
+    for (const k of PLACE_ORDER) { const p = PLACES[k]; if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return k; }
+    return null; // 경계(void)
+  };
+  // 지역: dungeon / town(마을) / meadow(집 짓는 땅) / cave(광산) / forest / fishing / farm / ranch
+  const zoneAt = (x, y) => {
+    const pl = placeAt(x, y);
+    if (pl === 'village') return x >= TX && x < TX + OW && y < TY + OH ? 'town' : 'meadow';
+    if (pl === 'mine') return 'cave';
+    return pl || 'void';
+  };
+  // 던전 지대에서 몇 성 던전인지 (DUNGEONS 아래에서 정해요)
+  const dungeonStar = (x) => { for (const d of DUNGEONS) if (x >= d.x0 - 1 && x <= d.x1 + 1) return d.star; return 1; };
 
   // ───────── 낚시 (지역마다 다른 물고기) ─────────
   const FISH_TABLES = {
     town: [['fish_minnow', 32], ['fish_crucian', 34], ['fish_tropical', 14], ['fish_puffer', 8], ['boot', 8], ['fish_golden', 4]],
     forest: [['fish_minnow', 22], ['fish_trout', 40], ['fish_salmon', 18], ['boot', 10], ['fish_golden', 4]],
     cave: [['fish_blind', 45], ['fish_crucian', 18], ['fish_shrimp', 16], ['boot', 14], ['fish_golden', 5]],
+    fishing: [['fish_minnow', 16], ['fish_crucian', 18], ['fish_tropical', 18], ['fish_puffer', 12], ['fish_mackerel', 18], ['fish_tuna', 7], ['boot', 5], ['fish_golden', 6]],
   };
   const FISH_TABLE = FISH_TABLES.town;
   function rollFish(rand, zone, gold) {
@@ -528,9 +566,14 @@
   // ───────── 상점 (탭별) ─────────
   // [아이템, 기본 가격, 필요 레벨]  (레벨이 낮으면 🔒 잠겨 있어요)
   const SHOP_TABS = [
+    // v8: 잃어버리면 다시 구할 수 없던 기본 도구·재료를 다시 팔아요
+    ['basic', '🧰 기본', [['hoe', 20, 1], ['can', 20, 1], ['rod', 30, 1], ['wall_wood', 3, 1], ['floor_wood', 2, 1], ['fence', 4, 1], ['door', 15, 1],
+      ['window', 10, 1], ['sign', 5, 1], ['chair', 15, 1], ['table', 20, 1], ['shelf', 25, 1], ['torch', 3, 1], ['lamp', 25, 1], ['stone_path', 2, 1],
+      ['brick_path', 2, 1], ['wall_stone', 3, 1], ['wall_brick', 4, 1], ['wall_log', 4, 2], ['wall_tile', 4, 2], ['floor_dark', 3, 2], ['floor_bath', 3, 2],
+      ['campfire', 40, 2], ['log_seat', 15, 2]]],
     ['farm', '🌱 농사', [['seed_carrot', 5, 1], ['seed_straw', 10, 1], ['seed_sunflower', 15, 2], ['seed_tomato', 18, 3], ['seed_pumpkin', 25, 4],
       ['seed_corn', 24, 5], ['seed_potato', 22, 7], ['seed_watermelon', 60, 10], ['sapling', 15, 1], ['flower', 5, 1], ['path', 2, 1], ['sand', 2, 1]]],
-    ['build', '🧱 벽·바닥', [['wall_white', 3, 1], ['wall_pink', 4, 1], ['wall_mint', 4, 1], ['wall_blue', 4, 1], ['wall_yellow', 4, 1], ['wall_green', 4, 2],
+    ['build', '🧱 벽·바닥', [['wall_white', 3, 1], ['wall_black', 4, 1], ['wall_pink', 4, 1], ['wall_mint', 4, 1], ['wall_blue', 4, 1], ['wall_yellow', 4, 1], ['wall_green', 4, 2],
       ['wall_purple', 4, 2], ['wall_paper', 6, 3], ['wall_dark', 5, 3], ['wall_wainscot', 7, 5], ['wall_flower', 8, 6], ['wall_star', 9, 8], ['door_white', 20, 2],
       ['floor_pink', 3, 1], ['floor_check', 3, 1], ['floor_mint', 4, 2], ['floor_kitchen', 4, 2], ['floor_wood_white', 5, 3], ['floor_herring', 5, 4],
       ['floor_straw', 5, 4], ['floor_hex', 6, 5], ['floor_marble', 8, 6], ['floor_stone_tile', 8, 6], ['rug', 6, 2], ['rug_green', 6, 2], ['rug_blue', 6, 3],
@@ -579,6 +622,7 @@
     { out: 'bench', n: 1, need: { wood: 4 } },
     { out: 'wall_log', n: 4, need: { wood: 3 } },
     { out: 'wall_tile', n: 4, need: { stone: 2 } },
+    { out: 'wall_black', n: 4, need: { stone: 2, wood: 1 } },
     { out: 'floor_dark', n: 4, need: { wood: 2 } },
     { out: 'floor_bath', n: 4, need: { stone: 1 } },
     { out: 'floor_marble', n: 4, need: { stone: 3 } },
@@ -798,6 +842,13 @@
     { id: 'q_job', name: '새로운 길', desc: '전직하기 (Lv.10, 마을 전직 교관)', stat: 'jobChanged', goal: 1, reward: { coins: 500, exp: 200 } },
     { id: 'q_en5', name: '대장장이 수습', desc: '무기 +5 강화 성공 (마을 대장간)', stat: 'enMax', goal: 5, reward: { coins: 500, exp: 300 } },
     { id: 'q_armor', name: '완전 무장', desc: '갑옷 4부위 모두 장착하기', stat: 'armorParts', goal: 4, reward: { coins: 300, exp: 200 } },
+    // v8
+    { id: 'q_boss4', name: '서리 여왕 토벌', desc: '4성 던전 보스 처치에 참여', stat: 'boss4', goal: 1, reward: { coins: 6000, exp: 4000 } },
+    { id: 'q_boss5', name: '심연의 군주 토벌', desc: '5성 던전 보스 처치에 참여', stat: 'boss5', goal: 1, reward: { coins: 12000, exp: 8000 } },
+    { id: 'q_mg1', name: '첫 알바', desc: '알바 미니게임 1번 하기 (마을 알바 사장님)', stat: 'mgPlay', goal: 1, reward: { coins: 100, exp: 30 } },
+    { id: 'q_mg30', name: '알바의 달인', desc: '알바 미니게임 30번 하기', stat: 'mgPlay', goal: 30, reward: { coins: 1500, exp: 500 } },
+    { id: 'q_story10', name: '마을의 해결사', desc: '마을 사람 스토리 퀘스트 10개 깨기', stat: 'storyDone', goal: 10, reward: { coins: 1000, exp: 500 } },
+    { id: 'q_travel', name: '여행가', desc: '🗺️ 이동으로 장소 30번 옮겨 다니기', stat: 'travel', goal: 30, reward: { coins: 300, exp: 100 } },
   ];
 
   // ───────── 일간 / 주간 / 월간 퀘스트 ─────────
@@ -1292,21 +1343,30 @@
   ];
   // 몬스터 (던전 안에만): n 마릿수, drops [아이템, 확률, 개수]
   // 보스: 가장 많이 때린 1~3등에게만 보상 (1등 100% · 2등 60% · 3등 35%), rare = 등수별 확률로 주는 무기
+  // v8: 던전 난이도 UP (체력·공격력 약 1.5배, 마릿수 +2) + ⭐4성 얼음 신전 · ⭐5성 심연의 성
   const MOBS = {
-    slime: { name: '슬라임', star: 1, hp: 24, atk: 5, def: 0, speed: 18, exp: 8, coins: [3, 8], drops: [['slime_gel', 0.6, 1]], n: 10 },
-    bat: { name: '박쥐', star: 1, hp: 16, atk: 4, def: 0, speed: 32, exp: 7, coins: [2, 6], drops: [['slime_gel', 0.3, 1]], n: 6 },
-    king_slime: { name: '킹슬라임', star: 1, boss: 1, hp: 450, atk: 12, def: 2, speed: 14, exp: 150, coins: [150, 200], loot: { slime_gel: 6, gold: 2, potion_m: 2 } },
-    skeleton: { name: '해골 병사', star: 2, hp: 80, atk: 13, def: 3, speed: 20, exp: 22, coins: [8, 15], drops: [['bone', 0.7, 1], ['iron', 0.25, 1]], n: 9 },
-    ghost: { name: '유령', star: 2, hp: 60, atk: 15, def: 1, speed: 26, exp: 25, coins: [8, 15], drops: [['ecto', 0.6, 1]], n: 6 },
-    skeleton_knight: { name: '해골 기사', star: 2, boss: 1, hp: 1600, atk: 26, def: 6, speed: 18, exp: 600, coins: [500, 600], loot: { bone: 8, gold: 4, gem: 1 },
+    slime: { name: '슬라임', star: 1, hp: 36, atk: 8, def: 1, speed: 20, exp: 10, coins: [4, 10], drops: [['slime_gel', 0.6, 1]], n: 12 },
+    bat: { name: '박쥐', star: 1, hp: 24, atk: 7, def: 0, speed: 34, exp: 9, coins: [3, 8], drops: [['slime_gel', 0.3, 1]], n: 8 },
+    king_slime: { name: '킹슬라임', star: 1, boss: 1, hp: 800, atk: 18, def: 3, speed: 15, exp: 200, coins: [180, 240], loot: { slime_gel: 6, gold: 2, potion_m: 2 } },
+    skeleton: { name: '해골 병사', star: 2, hp: 120, atk: 19, def: 4, speed: 22, exp: 27, coins: [10, 18], drops: [['bone', 0.7, 1], ['iron', 0.25, 1]], n: 10 },
+    ghost: { name: '유령', star: 2, hp: 95, atk: 22, def: 2, speed: 28, exp: 30, coins: [10, 18], drops: [['ecto', 0.6, 1]], n: 8 },
+    skeleton_knight: { name: '해골 기사', star: 2, boss: 1, hp: 2800, atk: 36, def: 7, speed: 19, exp: 750, coins: [600, 720], loot: { bone: 8, gold: 4, gem: 1 },
       rare: ['knight_sword', 'elf_bow', 'crystal_staff', 'ninja_blade'] },
-    golem: { name: '돌 골렘', star: 3, hp: 220, atk: 24, def: 9, speed: 13, exp: 55, coins: [15, 30], drops: [['gem', 0.25, 1], ['gold', 0.4, 1]], n: 8 },
-    imp: { name: '불꽃 임프', star: 3, hp: 120, atk: 28, def: 3, speed: 30, exp: 50, coins: [15, 30], drops: [['fire_core', 0.45, 1]], n: 7 },
-    dragon: { name: '드래곤', star: 3, boss: 1, hp: 5200, atk: 48, def: 12, speed: 16, exp: 2500, coins: [1500, 2000], loot: { fire_core: 6, dragon_scale: 2, gem: 3 },
+    golem: { name: '돌 골렘', star: 3, hp: 330, atk: 34, def: 10, speed: 14, exp: 66, coins: [18, 36], drops: [['gem', 0.25, 1], ['gold', 0.4, 1]], n: 9 },
+    imp: { name: '불꽃 임프', star: 3, hp: 185, atk: 38, def: 4, speed: 32, exp: 60, coins: [18, 36], drops: [['fire_core', 0.45, 1]], n: 8 },
+    dragon: { name: '드래곤', star: 3, boss: 1, hp: 8500, atk: 62, def: 13, speed: 17, exp: 3000, coins: [1800, 2400], loot: { fire_core: 6, dragon_scale: 2, gem: 3 },
       rare: ['hero_sword', 'phoenix_bow', 'arch_staff', 'shadow_blade'] },
+    yeti: { name: '설인', star: 4, hp: 560, atk: 48, def: 14, speed: 18, exp: 95, coins: [26, 48], drops: [['ice_crystal', 0.5, 1], ['gem', 0.2, 1]], n: 9 },
+    ice_wisp: { name: '얼음 정령', star: 4, hp: 320, atk: 56, def: 7, speed: 36, exp: 90, coins: [26, 48], drops: [['ice_crystal', 0.45, 1]], n: 8 },
+    frost_queen: { name: '서리 여왕', star: 4, boss: 1, hp: 15000, atk: 82, def: 18, speed: 18, exp: 6000, coins: [3600, 4600], loot: { ice_crystal: 8, dragon_scale: 2, gem: 5 },
+      rare: ['hero_sword', 'phoenix_bow', 'arch_staff', 'shadow_blade'] },
+    demon_knight: { name: '심연 기사', star: 5, hp: 950, atk: 72, def: 20, speed: 20, exp: 150, coins: [40, 72], drops: [['abyss_shard', 0.45, 1], ['dragon_scale', 0.05, 1]], n: 9 },
+    shade: { name: '그림자 망령', star: 5, hp: 600, atk: 82, def: 10, speed: 38, exp: 140, coins: [40, 72], drops: [['abyss_shard', 0.4, 1]], n: 8 },
+    abyss_lord: { name: '심연의 군주', star: 5, boss: 1, hp: 32000, atk: 118, def: 26, speed: 17, exp: 15000, coins: [8000, 10000], loot: { abyss_shard: 10, dragon_scale: 4, gem: 8 },
+      rare: ['abyss_sword', 'star_bow', 'void_staff', 'abyss_star'] },
   };
   const BOSS_SHARE = [1, 0.6, 0.35];                 // 보스 보상 등수별 비율
-  const BOSS_RARE = { 2: [0.3, 0.15, 0.05], 3: [0.5, 0.25, 0.1] };  // 등수별 무기 확률
+  const BOSS_RARE = { 2: [0.3, 0.15, 0.05], 3: [0.5, 0.25, 0.1], 4: [0.6, 0.3, 0.12], 5: [0.5, 0.25, 0.1] };  // 등수별 무기 확률
   const MOB_RESPAWN = 25000, BOSS_RESPAWN = 300000;
   // 칭호: stat 이 n 이상이면 / job 이면 얻어요
   const TITLES = [
@@ -1326,6 +1386,10 @@
     { id: 'boss1', name: '킹슬라임 퇴치자', stat: 'boss1', n: 1, desc: '1성 보스 처치 참여' },
     { id: 'boss2', name: '해골 기사 퇴치자', stat: 'boss2', n: 1, desc: '2성 보스 처치 참여' },
     { id: 'boss3', name: '용 사냥꾼', stat: 'boss3', n: 1, desc: '3성 보스 처치 참여' },
+    { id: 'boss4', name: '서리를 깬 자', stat: 'boss4', n: 1, desc: '4성 보스 처치 참여' },
+    { id: 'boss5', name: '심연을 본 자', stat: 'boss5', n: 1, desc: '5성 보스 처치 참여' },
+    { id: 'parttimer', name: '프로 알바러', stat: 'mgPlay', n: 50, desc: '알바 미니게임 50번' },
+    { id: 'star_guardian', name: '별의 수호자', stat: 'story_final', n: 1, desc: '마을 이야기 「부서진 수호별」 끝까지 깨기' },
     { id: 'boss_ace', name: '보스 킬러', stat: 'bossTop1', n: 5, desc: '보스 딜량 1등 5번' },
     { id: 'smith', name: '강화의 달인', stat: 'enMax', n: 7, desc: '+7 강화 성공' },
     { id: 'smith10', name: '강화의 신', stat: 'enMax', n: 10, desc: '+10 강화 성공' },
@@ -1347,6 +1411,7 @@
     { id: 'slime_nemesis', hard: 1, name: '킹슬라임의 천적', stat: 'boss1', n: 30, desc: '킹슬라임 처치 30번 참여' },
     { id: 'grave_lord', hard: 1, name: '묘지의 지배자', stat: 'boss2', n: 20, desc: '해골 기사 처치 20번 참여' },
     { id: 'dragon_slayer', hard: 1, name: '드래곤 슬레이어', stat: 'boss3', n: 10, desc: '드래곤 처치 10번 참여' },
+    { id: 'abyss_walker', hard: 1, name: '심연을 걷는 자', stat: 'boss5', n: 10, desc: '심연의 군주 처치 10번 참여' },
     { id: 'boss_legend', hard: 1, name: '보스 학살자', stat: 'bossTop1', n: 30, desc: '보스 딜량 1등 30번' },
     { id: 'undying', hard: 1, name: '오뚝이', all: [{ stat: 'deaths', n: 100 }, { stat: 'kill', n: 1000 }], desc: '100번 쓰러지고도 몬스터 1000마리 처치' },
     { id: 'en_addict', hard: 1, name: '강화 중독자', stat: 'enhanceTry', n: 500, desc: '강화 500번 시도' },
@@ -1371,15 +1436,18 @@
   const titleOk = (pr, t) => titleConds(pr, t).every((c) => c.v >= c.n);
 
   // ───────── v7 지도: 예전 지도를 오른쪽·아래로 옮기고, 위에 던전 지대 · 왼쪽에 새 땅 ─────────
+  // v8: 던전 5곳 (가로 26칸씩). 아래 앞마당은 ⚔️ 던전 장소의 로비
   const DUNGEONS = [
-    { star: 1, x0: 4, x1: 43, lv: 5, name: '⭐ 1성 던전 · 슬라임 동굴' },
-    { star: 2, x0: 52, x1: 91, lv: 12, name: '⭐⭐ 2성 던전 · 해골 묘지' },
-    { star: 3, x0: 100, x1: 139, lv: 20, name: '⭐⭐⭐ 3성 던전 · 용암 성채' },
+    { star: 1, x0: 2, x1: 27, lv: 5, name: '⭐ 1성 던전 · 슬라임 동굴' },
+    { star: 2, x0: 30, x1: 55, lv: 12, name: '⭐⭐ 2성 던전 · 해골 묘지' },
+    { star: 3, x0: 58, x1: 83, lv: 20, name: '⭐⭐⭐ 3성 던전 · 용암 성채' },
+    { star: 4, x0: 86, x1: 111, lv: 28, name: '⭐⭐⭐⭐ 4성 던전 · 얼음 신전' },
+    { star: 5, x0: 114, x1: 139, lv: 36, name: '⭐⭐⭐⭐⭐ 5성 던전 · 심연의 성' },
   ];
   const DY0 = 2, DY1 = 31;                       // 던전 건물 위·아래 벽 줄
   DUNGEONS.forEach((d) => { d.cx = Math.floor((d.x0 + d.x1) / 2); d.gate = { x: d.cx, y: DY1 }; d.inside = { x: d.cx, y: DY1 - 3 }; d.outside = { x: d.cx, y: DY1 + 2 }; d.boss = { x: d.cx, y: DY0 + 4 }; });
   function toV7(ground0, objects0) {
-    const ground = Array.from({ length: H }, () => new Array(W).fill('grass'));
+    const ground = Array.from({ length: H7 }, () => new Array(W).fill('grass'));
     const objects = {};
     for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) ground[y + TY][x + TX] = ground0[y][x];
     for (const [k, o] of Object.entries(objects0)) { const [x, y] = k.split(',').map(Number); objects[(x + TX) + ',' + (y + TY)] = o; }
@@ -1392,13 +1460,14 @@
   function generateWorld() {
     const g = generateLegacy();
     const v = toV7(g.ground, g.objects);
-    const animals = g.animals.map((a) => Object.assign({}, a, { x: a.x + TX * TILE, y: a.y + TY * TILE }));
-    return { ground: v.ground, objects: v.objects, animals };
+    const v8 = toV8(v.ground, v.objects);
+    // 마을 동물 우리는 없어졌으니 처음 동물들은 목장에서 지내요 (toV8 이 목장 동물을 만들어요)
+    return { ground: v8.ground, objects: v8.objects, animals: v8.animals };
   }
   // 왼쪽 새 땅: 위쪽은 집 짓는 들판, 맨 아래는 숲 (생산 구역)
   function genLeftStrip(ground, objects) {
     const { setG, setO } = worldTools(ground, objects);
-    for (let y = TY; y < H; y++) for (let x = 0; x < TX; x++) {
+    for (let y = TY; y < H7; y++) for (let x = 0; x < TX; x++) {
       setO(x, y, null);
       if (y < CY) {
         setG(x, y, 'grass');
@@ -1406,7 +1475,7 @@
         continue;
       }
       setG(x, y, 'forest');
-      if (x < 2 || y >= H - 2 || (y < CY + 2 && Math.abs(x - 22) > 2)) { setO(x, y, { t: 'pine', fixed: 1 }); continue; }
+      if (x < 2 || y >= H7 - 2 || (y < CY + 2 && Math.abs(x - 22) > 2)) { setO(x, y, { t: 'pine', fixed: 1 }); continue; }
       if (Math.abs(x - 22) <= 1 && y < CY + 12) continue;
       const r = hash(x * 13 + 5, y * 17 + 3);
       if (r < 0.2) setO(x, y, { t: 'tree' });
@@ -1436,8 +1505,8 @@
         const edge = x === d.x0 || x === d.x1 || y === DY0 || y === DY1;
         if (edge) { setO(x, y, { t: 'dungeon_wall', fixed: 1 }); continue; }
         const open = Math.abs(x - d.cx) <= 1 || Math.abs(y - 17) <= 1 || y <= DY0 + 7 || y >= DY1 - 4;
-        if (!open && hash(Math.floor(x / 3) * 11 + d.star, Math.floor(y / 3) * 7 + 5) < 0.16) setO(x, y, { t: 'dungeon_wall', fixed: 1 });
-        else if (d.star === 3 && !open && hash(x * 5, y * 9 + 3) < 0.06) setG(x, y, 'lava');
+        if (!open && hash(Math.floor(x / 3) * 11 + d.star, Math.floor(y / 3) * 7 + 5) < (d.star >= 4 ? 0.2 : 0.16)) setO(x, y, { t: 'dungeon_wall', fixed: 1 });
+        else if ((d.star === 3 || d.star === 5) && !open && hash(x * 5, y * 9 + 3) < 0.07) setG(x, y, 'lava');
       }
       // 보스 방 칸막이
       for (let x = d.x0 + 1; x < d.x1; x++) if (Math.abs(x - d.cx) > 2) setO(x, DY0 + 8, { t: 'dungeon_wall', fixed: 1 });
@@ -1446,10 +1515,10 @@
       setO(d.cx, d.inside.y + 1, { t: 'dungeon_exit', star: d.star, fixed: 1 });
       setO(d.cx + 2, DY1 + 2, { t: 'sign', text: `${d.name} (Lv.${d.lv}부터 · 문 앞에서 E)` });
     }
-    for (let x = 4; x < W - 4; x++) setG(x, DY1 + 4, 'path');
+    for (let x = 2; x < W - 2; x++) setG(x, DY1 + 4, 'path');
     for (const d of DUNGEONS) for (let y = DY1 + 1; y <= DY1 + 4; y++) setG(d.cx, y, 'path');
-    for (let y = DY1 + 4; y < TY + 6; y++) if (!objects[(TX + 31) + ',' + y]) setG(TX + 31, y, 'path');
-    setO(TX + 33, TY - 2, { t: 'sign', text: '⚔️ 위로 가면 던전 지대' });
+    const sp = PLACES.dungeon.spawn;
+    setO(Math.floor(sp[0]) + 2, Math.floor(sp[1]) + 1, { t: 'sign', text: '⚔️ 던전 로비 · 마을로 갈 땐 🗺️ 이동' });
   }
   // 숲이 아닌 곳의 나무는 없애요 (나무는 숲에만)
   function cleanTrees(objects) {
@@ -1474,10 +1543,319 @@
     near('job_master', TX + 24, TY + 27);
     near('anvil', TX + 38, TY + 27);
   }
+  // 빈 칸 찾아서 놓기 (물·길·경계 피해서)
+  function placeNear(ground, objects, cx, cy, obj) {
+    for (let r = 0; r <= 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const x = cx + dx, y = cy + dy;
+      if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
+      const g = ground[y][x];
+      if (objects[x + ',' + y] || g === 'water' || g === 'path' || g === 'void' || g === 'lava') continue;
+      objects[x + ',' + y] = obj;
+      return [x, y];
+    }
+    return null;
+  }
+
+  // ───────── 🧑‍🌾 마을 사람 (NPC) ─────────
+  // x·y = 놓고 싶은 칸 (막혀 있으면 근처 빈 칸), av = 모습 (top 은 옷 id)
+  const NPCS = {
+    mayor: { name: '모모 촌장', x: 79, y: 58, av: { skin: 1, hs: 0, hc: 6, eyes: 1, top: 'suit', tc: 11, bc: 8, acc: 'glasses' },
+      lines: ['허허, 알PDF 마을은 오늘도 평화롭구먼.', '마을 사람들 부탁을 들어주면 다들 좋아할 걸세.', '위쪽 [🗺️ 이동] 버튼으로 여러 장소에 갈 수 있다네.'] },
+    farmer: { name: '감자 할아버지', x: 88, y: 70, av: { skin: 2, hs: 0, hc: 6, eyes: 3, top: 'overalls', tc: 2, bc: 10, acc: 'strawhat' },
+      lines: ['흙 냄새가 참 좋지 않은가?', '🌾 농장에 가면 넓은 밭이 있단다.', '물 주는 걸 잊지 말게나.'] },
+    rancher: { name: '목장주 메이', x: 98, y: 70, av: { skin: 0, hs: 6, hc: 2, eyes: 1, top: 'shirt', tc: 3, bc: 4, acc: 'cap' },
+      lines: ['우리 목장 동물들 너무 귀엽죠?', '동물에게 작물을 주면 선물을 줘요!', '🐄 목장에 놀러 와요~'] },
+    fisher: { name: '어부 바다', x: 64, y: 69, av: { skin: 2, hs: 5, hc: 1, eyes: 0, top: 'raincoat', tc: 2, bc: 11, acc: 'fishhat' },
+      lines: ['오늘은 물때가 좋아!', '🎣 낚시터에선 참치도 잡힌다구.', '찌에 ❗가 뜨면 바로 당겨!'] },
+    miner: { name: '광부 철수', x: 62, y: 62, av: { skin: 3, hs: 0, hc: 1, eyes: 0, top: 'jersey', tc: 10, bc: 8, acc: 'cap' },
+      lines: ['광산은 어두우니 횃불을 챙겨.', '깊이 들어갈수록 금이랑 수정이 나와.', '곡괭이는 없어도 돼, X로 캐면 되니까!'] },
+    woodcutter: { name: '나무꾼 숲지기', x: 91, y: 60, av: { skin: 2, hs: 7, hc: 2, eyes: 0, top: 'stripe', tc: 9, bc: 10, acc: 'beanie' },
+      lines: ['나무는 🌲 숲에서만 다시 자라.', '숲속 모닥불에서 요리도 할 수 있지.', '사슴은 겁이 많아서 금방 도망가.'] },
+    chef: { name: '요리사 쿡', x: 85, y: 59, av: { skin: 0, hs: 3, hc: 0, eyes: 2, top: 'chefcoat', tc: 7, bc: 8, acc: 'chef' },
+      lines: ['요리는 사랑이에요! 💕', '가스레인지나 모닥불 앞에서 E를 눌러 봐요.', '요리를 먹으면 잠깐 빨라져요.'] },
+    knight: { name: '기사단장 레온', x: 70, y: 69, av: { skin: 1, hs: 5, hc: 3, eyes: 0, top: 'armor', tc: 11, bc: 11, acc: 'none' },
+      lines: ['강해지고 싶은가?', '던전 몬스터는 공격 전에 ❗를 띄운다. 피하라!', '보스는 혼자보다 여럿이 상대하는 게 좋다.'] },
+    librarian: { name: '사서 루나', x: 86, y: 77, av: { skin: 0, hs: 1, hc: 5, eyes: 3, top: 'dress', tc: 5, bc: 5, acc: 'witch' },
+      lines: ['쉿, 책 읽는 중이에요...', '이 마을엔 오래된 전설이 있어요.', '별은 밤하늘에만 있는 게 아니랍니다.'] },
+    merchant: { name: '떠돌이 상인 핀', x: 67, y: 74, av: { skin: 1, hs: 5, hc: 0, eyes: 4, top: 'pirate', tc: 8, bc: 10, acc: 'piratehat' },
+      lines: ['좋은 물건 있수다~', '돈은 돌고 도는 법이지!', '세상 구석구석 안 가본 데가 없다네.'] },
+    kid: { name: '꼬마 토리', x: 81, y: 71, av: { skin: 0, hs: 2, hc: 3, eyes: 1, top: 'tshirt', tc: 1, bc: 4, acc: 'bunny' },
+      lines: ['언니 오빠! 같이 놀자!', '나도 크면 모험가가 될 거야!', '강아지 너무 좋아~'] },
+    grandma: { name: '뜨개 할머니', x: 100, y: 61, av: { skin: 1, hs: 4, hc: 6, eyes: 3, top: 'hanbok', tc: 0, bc: 6, acc: 'none' },
+      lines: ['아이고 우리 강아지 왔구나.', '할미가 목도리 떠 줄까?', '밥은 먹고 다니니?'] },
+    boss: { name: '알바 사장님', x: 94, y: 66, av: { skin: 2, hs: 3, hc: 1, eyes: 1, top: 'shirt', tc: 4, bc: 8, acc: 'headphones' }, job: 'mg',
+      lines: ['알바생 구해요~ 시급 두둑이!', '혼자 해도 되고 친구랑 같이 해도 돼요!', '순위 1등은 채팅으로 자랑해 줄게요 👑'] },
+  };
+  const npcAvatar = (id) => {
+    const a = NPCS[id].av;
+    return { skin: a.skin || 0, hs: a.hs || 0, hc: a.hc || 0, eyes: a.eyes || 0, blush: 1, top: Math.max(0, TOPS.findIndex((t) => t.id === a.top)),
+      tc: a.tc || 0, bc: a.bc == null ? 8 : a.bc, acc: a.acc || 'none', back: a.back || 'none' };
+  };
+  function placeStoryNPCs(ground, objects) {
+    const have = new Set(Object.values(objects).filter((o) => o && o.t === 'npc').map((o) => o.id));
+    for (const [id, n] of Object.entries(NPCS)) if (!have.has(id)) placeNear(ground, objects, n.x, n.y, { t: 'npc', id, fixed: 1 });
+  }
+
+  // ───────── 📖 스토리 퀘스트 「부서진 수호별」 ─────────
+  // goal: talk(그 사람과 이야기) / visit(장소에 가기) / stat(받은 뒤부터 센 개수) / abs(지금까지 기록) / item(가져다주기, 내면 없어져요)
+  // req: 먼저 깨야 하는 퀘스트, lv: 필요한 레벨. 새 퀘스트가 있으면 머리 위 ❓, 다 깼으면 ❗
+  const STORY = [
+    // 1장. 새 주민
+    { id: 's1', npc: 'mayor', name: '어서 와요, 새 주민!', lv: 1, req: [], goal: { type: 'talk', npc: 'farmer' }, t: '감자 할아버지에게 인사하기',
+      talk: '자네가 새로 온 주민이구먼! 마을 사람들과 먼저 친해지는 게 좋겠어. 저기 밭 근처의 감자 할아버지께 인사드리고 오게.', end: '오오, 촌장님이 보냈구먼! 반갑네, 젊은이.', reward: { coins: 100, exp: 40 } },
+    { id: 's2', npc: 'farmer', name: '농사 첫걸음', lv: 1, req: ['s1'], goal: { type: 'stat', stat: 'harvest', n: 5 }, t: '작물 5개 수확하기',
+      talk: '요즘 허리가 아파서 말이야... 대신 작물 좀 키워서 수확해 보겠나? 🌾 농장에 가면 밭이 넓다네.', end: '허허, 손이 아주 야무지구먼!', reward: { coins: 150, exp: 60, items: { seed_tomato: 5 } } },
+    { id: 's3', npc: 'farmer', name: '밭이 된 마음', lv: 2, req: ['s2'], goal: { type: 'item', item: 'carrot', n: 10 }, t: '당근 10개 가져다드리기',
+      talk: '손녀가 당근 케이크를 먹고 싶다는구먼. 당근 10개만 구해다 주겠나?', end: '고맙네! 이건 내 마음이야.', reward: { coins: 300, exp: 80, items: { seed_watermelon: 2 } } },
+    { id: 's4', npc: 'rancher', name: '목장 구경', lv: 1, req: ['s1'], goal: { type: 'visit', place: 'ranch' }, t: '🐄 목장에 가 보기 (🗺️ 이동)',
+      talk: '안녕하세요! 저는 목장을 하고 있어요. 위쪽 [🗺️ 이동] 버튼으로 🐄 목장에 한 번 와 볼래요?', end: '와 줬군요! 우리 애들 귀엽죠?', reward: { coins: 120, exp: 50 } },
+    { id: 's5', npc: 'rancher', name: '배고픈 친구들', lv: 2, req: ['s4'], goal: { type: 'stat', stat: 'feed', n: 5 }, t: '동물에게 밥 5번 주기',
+      talk: '오늘따라 애들이 배고파해요. 작물을 들고 동물 앞에서 Space를 눌러 밥을 줘요!', end: '다들 배불러서 행복해 보여요 💕', reward: { coins: 200, exp: 70 } },
+    { id: 's6', npc: 'rancher', name: '신선한 선물', lv: 3, req: ['s5'], goal: { type: 'stat', stat: 'produce', n: 3 }, t: '동물 선물 3개 받기',
+      talk: '밥을 먹은 동물은 조금 지나면 선물을 줘요. E로 받아 볼래요?', end: '최고의 목장 도우미예요!', reward: { coins: 250, exp: 90, items: { omelet: 1 } } },
+    { id: 's7', npc: 'fisher', name: '첫 낚시', lv: 1, req: ['s1'], goal: { type: 'visit', place: 'fishing' }, t: '🎣 낚시터에 가 보기',
+      talk: '어이, 낚시 좋아하나? 🎣 낚시터는 물이 아주 맑다구. 한번 가 봐!', end: '어때, 시원하지?', reward: { coins: 100, exp: 40 } },
+    { id: 's8', npc: 'fisher', name: '오늘의 조황', lv: 2, req: ['s7'], goal: { type: 'stat', stat: 'fish', n: 8 }, t: '물고기 8마리 낚기',
+      talk: '시장에 낼 물고기가 모자라. 8마리만 낚아 주겠어?', end: '대어다 대어!', reward: { coins: 300, exp: 100, items: { potion_s: 3 } } },
+    { id: 's9', npc: 'fisher', name: '바다의 왕', lv: 8, req: ['s8'], goal: { type: 'item', item: 'fish_tuna', n: 1 }, t: '참치 1마리 가져다주기',
+      talk: '전설의 참치를 본 적 있어? 낚시터 깊은 곳에 산대. 한 마리만 보여 줘!', end: '이, 이게 참치...! 평생의 소원을 이뤘어!', reward: { coins: 800, exp: 300 } },
+    { id: 's10', npc: 'miner', name: '광산으로!', lv: 3, req: ['s1'], goal: { type: 'item', item: 'stone', n: 15 }, t: '돌 15개 가져다주기',
+      talk: '마을 길을 고치려면 돌이 필요해. ⛏ 광산에서 바위를 X로 캐서 15개만 가져다줘.', end: '튼튼한 돌이네! 고마워.', reward: { coins: 200, exp: 70, items: { torch: 8 } } },
+    { id: 's11', npc: 'miner', name: '반짝이는 철', lv: 5, req: ['s10'], goal: { type: 'stat', stat: 'iron', n: 8 }, t: '철광석 8개 캐기',
+      talk: '대장간 아저씨가 철이 모자라대. 광산에서 철광석 좀 캐 줄래?', end: '이 정도면 칼 열 자루는 만들겠는걸!', reward: { coins: 350, exp: 120 } },
+    { id: 's12', npc: 'miner', name: '금빛 꿈', lv: 9, req: ['s11'], goal: { type: 'item', item: 'gold', n: 3 }, t: '금광석 3개 가져다주기',
+      talk: '광부의 꿈은 금맥을 찾는 거지! 광산 깊은 곳 금광석 3개만 보여 줘.', end: '와... 진짜 금이다!', reward: { coins: 600, exp: 200 } },
+    { id: 's13', npc: 'woodcutter', name: '숲의 부름', lv: 1, req: ['s1'], goal: { type: 'visit', place: 'forest' }, t: '🌲 숲에 가 보기',
+      talk: '숲은 언제나 너를 기다리고 있어. 🌲 숲에 와 봐.', end: '숲 공기 좋지?', reward: { coins: 100, exp: 40 } },
+    { id: 's14', npc: 'woodcutter', name: '장작 패기', lv: 2, req: ['s13'], goal: { type: 'item', item: 'wood', n: 30 }, t: '나무 30개 가져다주기',
+      talk: '겨울이 오기 전에 장작을 모아야 해. 나무 30개만 부탁해!', end: '이번 겨울은 따뜻하겠어.', reward: { coins: 250, exp: 80, items: { campfire: 1 } } },
+    { id: 's15', npc: 'chef', name: '요리 수업', lv: 2, req: ['s2'], goal: { type: 'item', item: 'carrot_soup', n: 2 }, t: '당근 수프 2그릇 만들어 오기',
+      talk: '요리 수업을 해 줄게요! 당근 2개로 당근 수프를 끓여서 2그릇 가져와 봐요.', end: '음~ 간이 딱 맞아요!', reward: { coins: 250, exp: 90 } },
+    { id: 's16', npc: 'chef', name: '꼬마 셰프', lv: 4, req: ['s15'], goal: { type: 'stat', stat: 'cook', n: 10 }, t: '요리 10번 하기',
+      talk: '이제 혼자서도 잘하겠죠? 요리를 10번 해 봐요!', end: '이제 어엿한 셰프예요 👩‍🍳', reward: { coins: 400, exp: 150, items: { pumpkin_pie: 1 } } },
+    { id: 's17', npc: 'kid', name: '멍멍이 보고 싶어', lv: 1, req: [], goal: { type: 'stat', stat: 'pet', n: 5 }, t: '펫 5번 쓰다듬기',
+      talk: '나 강아지 너무 좋아! 펫을 5번 쓰다듬어 주면 안 돼? 나도 보고 싶어!', end: '꺄~ 너무 귀여워!', reward: { coins: 150, exp: 50 } },
+    { id: 's18', npc: 'kid', name: '같이 놀자!', lv: 1, req: ['s17'], goal: { type: 'stat', stat: 'mgPlay', n: 2 }, t: '알바 미니게임 2번 하기 (알바 사장님)',
+      talk: '알바 사장님네 게임 엄청 재밌대! 두 번만 해 보고 알려 줘!', end: '우와, 나도 커서 알바할래!', reward: { coins: 200, exp: 60 } },
+    { id: 's19', npc: 'grandma', name: '할미의 목도리', lv: 3, req: [], goal: { type: 'item', item: 'wool', n: 5 }, t: '양털 5개 가져다드리기',
+      talk: '날이 추워지는데 손주들 목도리를 떠 줘야겠어. 양털 5개만 구해다 줄 수 있니?', end: '아이고 고마워라. 이건 할미 선물이야.', reward: { coins: 400, exp: 120, items: { rug_rainbow: 10 } } },
+    { id: 's20', npc: 'grandma', name: '따뜻한 한 그릇', lv: 5, req: ['s19'], goal: { type: 'item', item: 'mushroom_soup', n: 1 }, t: '버섯 크림수프 1그릇 가져다드리기',
+      talk: '요즘 입맛이 없구나... 버섯 크림수프가 먹고 싶네.', end: '맛있다... 우리 강아지 최고야!', reward: { coins: 400, exp: 150 } },
+    { id: 's21', npc: 'merchant', name: '장사의 기본', lv: 3, req: [], goal: { type: 'stat', stat: 'earned', n: 1500 }, t: '상점에 팔아서 1500코인 벌기',
+      talk: '장사꾼이 되고 싶다고? 일단 물건을 팔아서 1500코인을 벌어 봐!', end: '돈 냄새가 나는구먼! 소질 있어.', reward: { coins: 300, exp: 100 } },
+    { id: 's22', npc: 'merchant', name: '세계 일주', lv: 5, req: ['s21'], goal: { type: 'stat', stat: 'travel', n: 6 }, t: '🗺️ 이동으로 6번 여행하기',
+      talk: '세상은 넓다구! 여러 장소를 돌아다녀 봐. 6번만!', end: '이제 진짜 여행가 같은걸?', reward: { coins: 300, exp: 100, items: { potion_m: 2 } } },
+    { id: 's23', npc: 'boss', name: '첫 출근', lv: 1, req: [], goal: { type: 'stat', stat: 'mgPlay', n: 1 }, t: '알바 미니게임 1번 하기',
+      talk: '알바생 구해요! 카페·택배·두더지 잡기 중에 하나 골라서 해 봐요. 혼자도, 친구랑 같이도 돼요!', end: '첫 출근 축하해요! 시급은 두둑이~', reward: { coins: 150, exp: 50 } },
+    { id: 's24', npc: 'boss', name: '에이스 알바생', lv: 3, req: ['s23'], goal: { type: 'stat', stat: 'mgCoins', n: 800 }, t: '알바로 800코인 벌기',
+      talk: '실력 좀 보여 줄래요? 알바로 800코인을 벌어 와요!', end: '에이스 인정! 👏', reward: { coins: 500, exp: 150 } },
+    // 2장. 부서진 수호별
+    { id: 's25', npc: 'mayor', name: '부서진 수호별', lv: 5, req: ['s3', 's6', 's8'], goal: { type: 'talk', npc: 'librarian' }, t: '사서 루나에게 전설 물어보기',
+      talk: '사실... 이 마을을 지켜 주던 "수호별"이 오래전에 부서졌다네. 다섯 조각이 던전 깊은 곳으로 흩어졌다는 전설이 있지. 사서 루나가 자세히 알 걸세.', end: '촌장님이 보내셨군요. 수호별 이야기... 드디어 누군가 찾아왔네요.', reward: { coins: 200, exp: 100 } },
+    { id: 's26', npc: 'librarian', name: '첫 번째 조각', lv: 5, req: ['s25'], goal: { type: 'stat', stat: 'boss1', n: 1 }, t: '1성 던전 킹슬라임 처치 참여',
+      talk: '고서에 따르면 첫 번째 별조각은 슬라임 동굴의 왕이 삼켰대요. 킹슬라임을 쓰러뜨려 주세요!', end: '조각이 반짝여요... 진짜였어요!', reward: { coins: 500, exp: 300 } },
+    { id: 's27', npc: 'knight', name: '기사단의 시험', lv: 8, req: ['s26'], goal: { type: 'stat', stat: 'kill', n: 60 }, t: '던전 몬스터 60마리 처치',
+      talk: '별조각을 모은다고? 그렇다면 기사단의 시험을 통과해야 한다. 몬스터 60마리를 처치하고 와라!', end: '훌륭하다. 기사단이 너를 돕겠다.', reward: { coins: 600, exp: 300, items: { potion_m: 5 } } },
+    { id: 's28', npc: 'librarian', name: '두 번째 조각', lv: 12, req: ['s27'], goal: { type: 'stat', stat: 'boss2', n: 1 }, t: '2성 던전 해골 기사 처치 참여',
+      talk: '두 번째 조각은 해골 묘지의 기사가 지키고 있어요. 조심하세요!', end: '두 조각이 서로 끌어당겨요!', reward: { coins: 1000, exp: 600 } },
+    { id: 's29', npc: 'knight', name: '날카로운 칼날', lv: 14, req: ['s28'], goal: { type: 'abs', stat: 'enMax', n: 5 }, t: '무기 +5 강화 성공 (대장간)',
+      talk: '앞으로의 적은 더 강하다. 대장간에서 무기를 +5까지 강화해라.', end: '좋은 칼날이군. 이제 용과도 싸울 수 있겠다.', reward: { coins: 800, exp: 400 } },
+    { id: 's30', npc: 'librarian', name: '세 번째 조각', lv: 20, req: ['s29'], goal: { type: 'stat', stat: 'boss3', n: 1 }, t: '3성 던전 드래곤 처치 참여',
+      talk: '세 번째 조각은 용암 성채의 드래곤이 품고 있대요. 용의 숨결을 조심하세요!', end: '세 조각... 수호별이 숨을 쉬기 시작했어요.', reward: { coins: 2000, exp: 1500 } },
+    { id: 's31', npc: 'librarian', name: '네 번째 조각', lv: 28, req: ['s30'], goal: { type: 'stat', stat: 'boss4', n: 1 }, t: '4성 던전 서리 여왕 처치 참여',
+      talk: '네 번째는 얼음 신전의 서리 여왕이... 별의 온기를 얼려 가뒀대요.', end: '얼음이 녹으며 조각이 빛나요!', reward: { coins: 4000, exp: 3000 } },
+    { id: 's32', npc: 'mayor', name: '수호별이여, 다시 빛나라', lv: 36, req: ['s31'], goal: { type: 'stat', stat: 'boss5', n: 1 }, t: '5성 던전 심연의 군주 처치 참여', final: 1,
+      talk: '마지막 조각은... 심연의 성 가장 깊은 곳, 심연의 군주가 쥐고 있다네. 마을의 모든 희망을 자네에게 걸겠네.', end: '보게! 수호별이 다시 빛나고 있어! 자네는 이 마을의 영웅일세!', reward: { coins: 10000, exp: 8000, items: { statue: 1 } } },
+  ];
+  const STORY_BY = {};
+  STORY.forEach((q) => { STORY_BY[q.id] = q; });
+  const storyState = (pr) => pr.story || { done: [], active: {} };
+  // 받을 수 있는 퀘스트인지
+  const storyAvail = (pr, q, lv) => { const st = storyState(pr); return !st.done.includes(q.id) && !st.active[q.id] && q.req.every((r) => st.done.includes(r)) && (lv || 1) >= q.lv; };
+  // 진행도 { v, n }
+  function storyProg(pr, q, inv) {
+    const st = storyState(pr), a = st.active[q.id] || {}, g = q.goal, stats = pr.stats || {};
+    if (g.type === 'talk') return { v: 0, n: 1 };
+    if (g.type === 'visit') return { v: Math.min(1, Math.max(0, (stats['visit_' + g.place] || 0) - (a.base || 0))), n: 1 };
+    if (g.type === 'stat') return { v: Math.min(g.n, Math.max(0, (stats[g.stat] || 0) - (a.base || 0))), n: g.n };
+    if (g.type === 'abs') return { v: Math.min(g.n, stats[g.stat] || 0), n: g.n };
+    if (g.type === 'item') return { v: Math.min(g.n, countItem(inv || pr.inv || [], g.item)), n: g.n };
+    return { v: 0, n: 1 };
+  }
+  // 그 사람 앞에서 끝낼 수 있는지 (talk 은 찾아갈 사람 앞에서, 나머지는 준 사람 앞에서)
+  function storyReady(pr, q, npc, inv) {
+    if (!storyState(pr).active[q.id]) return false;
+    if (q.goal.type === 'talk') return npc === q.goal.npc;
+    if (npc !== q.npc) return false;
+    const p = storyProg(pr, q, inv);
+    return p.v >= p.n;
+  }
+  const storyBaseStat = (g) => (g.type === 'visit' ? 'visit_' + g.place : g.type === 'stat' ? g.stat : null);
+  // 머리 위 표시: '!' = 끝낼 수 있음, '?' = 새 퀘스트, null
+  function npcMark(pr, npc, lv, inv) {
+    if (!pr) return null;
+    if (STORY.some((q) => storyReady(pr, q, npc, inv))) return '!';
+    if (STORY.some((q) => q.npc === npc && storyAvail(pr, q, lv))) return '?';
+    return null;
+  }
+
+  // ───────── 💼 알바 미니게임 ─────────
+  // dur = 초, max = 점수 상한, rate = 점수당 코인. 혼자(solo) 또는 방을 만들어 최대 4명이 같이 (같은 문제, 점수 경쟁)
+  const MINIGAMES = {
+    cafe: { name: '☕ 카페 알바', desc: '손님 주문대로 재료를 순서대로 눌러 음료를 만들어요. (숫자 1~6 또는 클릭) 틀리면 처음부터!', dur: 40, max: 2500, rate: 0.12 },
+    parcel: { name: '📦 택배 분류 알바', desc: '상자 색에 맞는 트럭으로 보내요. (← ↑ → ↓ 또는 클릭) 맞힐수록 콤보, 점점 빨라져요!', dur: 40, max: 3500, rate: 0.09 },
+    mole: { name: '🐹 두더지 잡기 알바', desc: '농장 두더지를 잡아요! 🐹 +10 · 황금 두더지 +30 · 🐝 벌은 -20 (숫자 1~9 또는 클릭)', dur: 30, max: 1800, rate: 0.22 },
+  };
+  const MG_PAY_MAX = 320;
+  const mgPay = (game, score, coop) => Math.min(MG_PAY_MAX, Math.round(Math.max(0, score) * MINIGAMES[game].rate * (coop ? 1.15 : 1)));
+  // 같은 seed → 같은 문제 (같이 하는 사람끼리 공정하게)
+  function mgRand(seed) {
+    let a = seed >>> 0;
+    return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+
+  // ───────── v8 지도: 장소 나누기 + 🌾 농장 · 🐄 목장 · 🎣 낚시터 새로 만들기 ─────────
+  // ground0/objects0 = v7 지도 (144×152). 지은 집·물건은 그대로 두고, 바뀌는 곳만 다시 그려요.
+  function toV8(ground0, objects0) {
+    const ground = Array.from({ length: H }, (_, y) => (ground0[y] ? ground0[y].slice() : new Array(W).fill('grass')));
+    const objects = Object.assign({}, objects0);
+    const { setG, setO, getO } = worldTools(ground, objects);
+    // 1) 던전 5곳으로 다시 짓기
+    genDungeonBand(ground, objects);
+    // 2) 마을의 텃밭·동물 우리 없애기 (농장·목장은 따로 생겼어요)
+    for (let y = TY + 27; y <= TY + 33; y++) for (let x = TX + 40; x <= TX + 58; x++) {
+      const o = getO(x, y);
+      if (o && (o.t === 'fence' || o.t === 'crop')) setO(x, y, null);
+      if (ground[y][x] === 'farm') setG(x, y, 'grass');
+    }
+    for (const x of [TX + 44, TX + 54]) for (let y = TY + 25; y <= TY + 27; y++) if (ground[y][x] === 'path' && !getO(x, y)) setG(x, y, 'grass');
+    for (let y = TY; y <= TY + 5; y++) if (ground[y][TX + 31] === 'path' && !getO(TX + 31, y)) setG(TX + 31, y, 'grass');
+    const OLD_SIGNS = ['🐔 동물 우리 (작물을 먹여요)', '🌲 아래로 가면 숲', '⛏ 아래로 가면 동굴', '🌲 아래로 가면 나무꾼의 숲', '⚔️ 위로 가면 던전 지대'];
+    for (const [k, o] of Object.entries(objects)) if (o && o.t === 'sign' && OLD_SIGNS.includes(o.text)) delete objects[k];
+    // 3) 새 장소
+    genFishing(ground, objects);
+    genFarm(ground, objects);
+    const animals = genRanch(ground, objects);
+    // 4) 장소 사이 까만 경계
+    const wall = (x, y) => { setG(x, y, 'void'); setO(x, y, null); };
+    for (let x = 0; x < W; x++) { wall(x, TY - 1); wall(x, CY - 1); wall(x, H7); }
+    for (let y = CY; y < H7; y++) { wall(TX - 1, y); wall(BX, y); }
+    for (let y = FY; y < H; y++) wall(72, y);
+    // 5) 마을 사람들
+    placeNPCs(ground, objects);
+    placeStoryNPCs(ground, objects);
+    const sp = PLACES.village.spawn;
+    if (!Object.values(objects).some((o) => o && o.t === 'sign' && o.travel)) placeNear(ground, objects, Math.floor(sp[0]) - 3, Math.floor(sp[1]) + 1, { t: 'sign', travel: 1, text: '🗺️ 위쪽 [이동] 버튼으로 던전·농장·목장·숲·광산·낚시터에 가요' });
+    return { ground, objects, animals };
+  }
+  // 🎣 낚시터 (예전 왼쪽 아래 숲 자리): 큰 호수 + 나무 다리
+  function genFishing(ground, objects) {
+    const P = PLACES.fishing;
+    const { setG, setO, getO } = worldTools(ground, objects);
+    const keep = (o) => o && !NATURAL.has(o.t) && !o.fixed; // 사람이 놓은 물건은 남겨요
+    for (let y = P.y0; y <= P.y1 + 1; y++) for (let x = P.x0; x <= P.x1 + 1; x++) {
+      if (!keep(getO(x, y))) setO(x, y, null);
+      setG(x, y, 'grass');
+      if (y > P.y0 + 3 && hash(x * 7 + 3, y * 5 + 11) > 0.955 && !getO(x, y)) setO(x, y, { t: 'flower' });
+    }
+    const cx = 21.5, cy = 140;
+    for (let y = P.y0 + 6; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) {
+      const dx = (x + 0.5 - cx) / 17, dy = (y + 0.5 - cy) / 9.5, d = dx * dx + dy * dy;
+      if (getO(x, y) && keep(getO(x, y))) { if (d < 1.5) setG(x, y, 'sand'); continue; }
+      if (d < 1) { setG(x, y, 'water'); setO(x, y, null); } else if (d < 1.5) { setG(x, y, 'sand'); if (getO(x, y) && getO(x, y).t === 'flower') setO(x, y, null); }
+    }
+    for (let x = P.x0 + 2; x <= P.x1 - 2; x++) setG(x, P.y0 + 2, 'path');
+    // 나무 다리: 가운데로 쭉 → 끝에서 양옆으로
+    for (let y = P.y0 + 5; y <= 139; y++) { setG(21, y, 'pier'); setO(21, y, null); }
+    for (let x = 16; x <= 26; x++) { setG(x, 139, 'pier'); setO(x, 139, null); }
+    const fixedO = (x, y, o) => { if (ground[y][x] !== 'water' && !getO(x, y)) setO(x, y, Object.assign({ fixed: 1 }, o)); };
+    fixedO(20, P.y0 + 4, { t: 'lamp' }); fixedO(22, P.y0 + 4, { t: 'lamp' });
+    fixedO(24, P.y0 + 1, { t: 'sign', text: '🎣 낚시터 · 다리 끝에서 물을 보고 낚싯대 Space!' });
+    for (const x of [6, 10, 32, 36]) fixedO(x, P.y0 + 4, { t: 'park_bench' });
+    fixedO(3, P.y0 + 4, { t: 'parasol' }); fixedO(39, P.y0 + 4, { t: 'parasol' });
+  }
+  // 🌾 농장: 울타리 친 큰 밭 6개
+  function genFarm(ground, objects) {
+    const P = PLACES.farm;
+    const { setG, setO, getO } = worldTools(ground, objects);
+    for (let y = P.y0; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) {
+      setO(x, y, null); setG(x, y, 'grass');
+      if (hash(x * 11 + 1, y * 3 + 7) > 0.97) setO(x, y, { t: 'flower' });
+    }
+    const py = P.y0 + 2;
+    for (let x = P.x0 + 2; x <= P.x1 - 2; x++) { setG(x, py, 'path'); setO(x, py, null); setG(x, 170, 'path'); setO(x, 170, null); }
+    for (const px of [23, 46]) for (let y = py; y <= P.y1 - 2; y++) { setG(px, y, 'path'); setO(px, y, null); }
+    for (const [x0, x1] of [[4, 21], [26, 43], [49, 66]]) for (const [y0, y1] of [[158, 168], [172, 182]]) {
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        setO(x, y, null);
+        if (x === x0 || x === x1 || y === y0 || y === y1) setO(x, y, { t: 'fence', fixed: 1 });
+        else setG(x, y, 'farm');
+      }
+      const gx = Math.floor((x0 + x1) / 2);
+      setO(gx, y0, null); setO(gx + 1, y0, null);
+      setG(gx, y0, 'path'); setG(gx + 1, y0, 'path');
+    }
+    const fixedO = (x, y, o) => setO(x, y, Object.assign({ fixed: 1 }, o));
+    fixedO(38, P.y0 + 1, { t: 'sign', text: '🌾 농장 · 괭이로 간 밭에 씨앗을 심고 물을 줘요' });
+    fixedO(10, 186, { t: 'windmill' }); fixedO(34, 186, { t: 'scarecrow' }); fixedO(58, 186, { t: 'windmill' });
+    fixedO(30, P.y0 + 1, { t: 'flower_bed' }); fixedO(41, P.y0 + 1, { t: 'flower_bed' });
+  }
+  // 🐄 목장: 울타리 친 목초지 3곳 + 헛간. 처음 동물들을 돌려줘요
+  function genRanch(ground, objects) {
+    const P = PLACES.ranch;
+    const { setG, setO } = worldTools(ground, objects);
+    for (let y = P.y0; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) {
+      setO(x, y, null); setG(x, y, 'grass');
+      if (hash(x * 5 + 9, y * 13 + 1) > 0.97) setO(x, y, { t: 'flower' });
+    }
+    const py = P.y0 + 2;
+    for (let x = P.x0 + 2; x <= P.x1 - 2; x++) { setG(x, py, 'path'); setO(x, py, null); setG(x, 175, 'path'); setO(x, 175, null); }
+    for (const px of [99, 124]) for (let y = py; y <= 175; y++) { setG(px, y, 'path'); setO(px, y, null); }
+    const pens = [[76, 97], [101, 122], [126, 141]];
+    for (const [x0, x1] of pens) {
+      for (let y = 158; y <= 172; y++) for (let x = x0; x <= x1; x++) {
+        setO(x, y, null);
+        if (x === x0 || x === x1 || y === 158 || y === 172) setO(x, y, { t: 'fence', fixed: 1 });
+      }
+      const gx = Math.floor((x0 + x1) / 2);
+      setO(gx, 158, null); setO(gx + 1, 158, null); setG(gx, 158, 'path'); setG(gx + 1, 158, 'path');
+    }
+    // 헛간
+    for (let y = 178; y <= 186; y++) for (let x = 100; x <= 112; x++) {
+      setG(x, y, 'floor_straw'); setO(x, y, null);
+      if (x === 100 || x === 112 || y === 178 || y === 186) setO(x, y, { t: 'wall_wood', fixed: 1 });
+    }
+    setO(106, 178, { t: 'door', open: true, fixed: 1 });
+    for (let y = 176; y <= 177; y++) setG(106, y, 'path');
+    setO(102, 180, { t: 'bench', fixed: 1 }); setO(110, 180, { t: 'bench', fixed: 1 });
+    setO(110, P.y0 + 1, { t: 'sign', text: '🐄 목장 · 작물을 들고 Space = 밥, 다 먹으면 E = 선물' });
+    setO(103, 177, { t: 'sign', text: '🏚️ 헛간' });
+    const A = [];
+    const put = (kind, tx, ty) => A.push({ kind, x: tx * TILE + 8, y: ty * TILE + 12 });
+    put('chicken', 82, 163); put('chicken', 88, 166); put('chicken', 92, 162); put('duck', 84, 168); put('duck', 90, 169);
+    put('cow', 106, 163); put('cow', 116, 165); put('sheep', 108, 168); put('sheep', 113, 161); put('goat', 119, 169);
+    put('pig', 131, 164); put('pig', 136, 168);
+    return A;
+  }
 
   // ───────── 📢 업데이트 소식 (마을 게시판에 자동으로 공지돼요) ─────────
   // 새 업데이트를 할 때 맨 앞에 하나 추가하면, 서버가 켜질 때 채팅으로 알리고 게시판 버튼에 🆕 가 떠요.
   const UPDATES = [
+    {
+      v: 'v8', date: '2026-11-16', title: '장소 이동 · 5성 던전 · 마을 사람과 스토리 · 알바 미니게임',
+      items: [
+        '🗺️ 장소가 따로따로! 위쪽 [🗺️ 이동] 버튼(T)으로 🏠 마을 · ⚔️ 던전 · 🌾 농장 · 🐄 목장 · 🌲 숲 · ⛏ 광산 · 🎣 낚시터를 오가요. 채팅은 어디서든 다 보여요',
+        '🏠 마을에 있던 광산·숲·던전·목장·텃밭은 각자의 장소로 옮겼어요 (마을 동물 우리의 동물들은 목장으로 이사했어요)',
+        '⚔️ 던전이 더 어려워졌어요 (몬스터 체력·공격력 UP) + ⭐⭐⭐⭐ 4성 얼음 신전(Lv.28) · ⭐⭐⭐⭐⭐ 5성 심연의 성(Lv.36)! 새 보스 서리 여왕·심연의 군주, 서리·심연 갑옷, 신화 무기',
+        '🧑‍🌾 마을 사람 13명과 스토리 「부서진 수호별」! 머리 위 ❓ = 새 퀘스트, ❗ = 다 깼어요. E로 말을 걸어요',
+        '💼 알바 사장님(마을)에게서 미니게임 알바: ☕ 카페 · 📦 택배 분류 · 🐹 두더지 잡기. 혼자도, 친구랑 같이도! 순위가 기록돼요',
+        '🛡️ 장비 창이 가방(I)을 열면 오른쪽에 보여요',
+        '⬛ 검정 벽 추가 (상점 🧱 벽·바닥, 🔨 만들기)',
+        '🔨 강화한 무기가 거래를 하면 +0으로 돌아가던 문제를 고쳤어요. 그동안 사라진 강화 단계는 가장 좋은 무기에 되돌려 드렸어요',
+        '🧰 다시 구할 수 없던 괭이·물뿌리개·낚싯대와 기본 재료를 상점 🧰 기본 탭에서 팔아요. 잃어버린 기본 도구와 퀘스트 보상은 📮 우편함으로 돌려드렸어요',
+      ],
+    },
     {
       v: 'v7.1', date: '2026-11-13', title: '전투 다듬기 · 전직 퀘스트 5단계',
       items: [
@@ -1551,6 +1929,8 @@
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,
     SKINS, HAIR_STYLES, HAIR_COLORS, EYES, TOPS, CLOTH, ACCESSORIES, BACKS, COSMETICS, COSMETIC_SRC, isLocked, FREE_ACC,
     defaultAvatar, sanitizeAvatar, INV_SIZE, CHEST_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, canFit, PRICE_MULT, generateWorld, expandWorld,
+    H7, FY, PLACES, PLACE_ORDER, placeAt, toV8, placeNear, NPCS, npcAvatar, placeStoryNPCs, STORY, STORY_BY, storyAvail, storyProg, storyReady, storyBaseStat, npcMark,
+    MINIGAMES, MG_PAY_MAX, mgPay, mgRand,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = SHARED;
   else root.SHARED = SHARED;

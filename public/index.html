@@ -210,6 +210,58 @@
     .tcell:disabled { cursor: default; }
     .tcell .n { position: absolute; right: 2px; bottom: 0; font-size: 10px; }
     @media (max-width: 560px) { .tcols { grid-template-columns: 1fr; } }
+    /* v8: 넓은 창 (가방 + 장비, 알바) */
+    #modal .box.wide { width: min(840px, calc(100vw - 24px)); }
+    .bagwrap { display: flex; gap: 12px; align-items: flex-start; }
+    .bagmain { flex: 1; min-width: 0; }
+    .eqpanel { width: 190px; flex: none; background: #fff; border: 3px solid #9aa7b0; padding: 8px; display: grid; gap: 6px; font-size: 12px; justify-items: center; }
+    .eqpanel > b { font-size: 13px; }
+    .eqpanel canvas.avbig { width: 78px; height: 96px; image-rendering: pixelated; background: #8fd16f; border: 2px solid var(--ink); }
+    .eqcol { display: grid; grid-template-columns: 56px 56px; gap: 6px; }
+    .eqstats { width: 100%; display: grid; gap: 2px; line-height: 1.5; }
+    .eqstats div { display: flex; justify-content: space-between; gap: 6px; }
+    @media (max-width: 760px) { .bagwrap { flex-direction: column; } .eqpanel { width: 100%; } .eqcol { grid-template-columns: repeat(4, 56px); } }
+    /* 🗺️ 이동 */
+    .travelgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    @media (max-width: 560px) { .travelgrid { grid-template-columns: 1fr; } }
+    .tcard { background: #fff; border: 3px solid #e8d9c6; padding: 10px; display: grid; gap: 4px; font-size: 13px; cursor: pointer; text-align: left; }
+    .tcard:hover:not(:disabled) { border-color: var(--pink); background: #fff0f4; }
+    .tcard.here { border-color: #7ed492; background: #f1fff4; cursor: default; }
+    .tcard b { font-size: 15px; } .tcard small { opacity: .7; }
+    /* 🧑‍🌾 마을 사람 */
+    .npchead { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+    .npchead canvas { width: 64px; height: 80px; image-rendering: pixelated; background: #8fd16f; border: 3px solid var(--ink); flex: none; }
+    .npcsay { flex: 1; background: #fff; border: 3px solid var(--ink); padding: 8px 10px; font-size: 13px; line-height: 1.6; position: relative; }
+    .row.story { align-items: flex-start; }
+    .storytalk { font-size: 12px; line-height: 1.6; background: #fffaf2; border-left: 3px solid #f2c230; padding: 4px 8px; margin: 4px 0; }
+    /* 💼 알바 미니게임 */
+    .mgwrap { display: grid; grid-template-columns: 1fr 180px; gap: 10px; }
+    @media (max-width: 640px) { .mgwrap { grid-template-columns: 1fr; } }
+    .mgstage { background: #fffaf2; border: 3px solid var(--ink); min-height: 300px; padding: 10px; display: grid; gap: 10px; align-content: start; justify-items: center; position: relative; touch-action: manipulation; }
+    .mghud { width: 100%; display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; }
+    .mgtime { height: 8px; width: 100%; border: 2px solid var(--ink); background: #eee3d5; } .mgtime i { display: block; height: 100%; background: #ff8fab; }
+    .mgbig { font-size: 44px; line-height: 1.1; text-align: center; min-height: 56px; }
+    .mgorder { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; font-size: 30px; }
+    .mgorder span { border: 2px solid #e8d9c6; background: #fff; padding: 2px 6px; position: relative; }
+    .mgorder span.ok { opacity: .35; } .mgorder span.cur { border-color: var(--pink); box-shadow: 0 0 0 2px #ffe3ea; }
+    .mgbtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; max-width: 360px; }
+    .mgbtns .btn { font-size: 20px; padding: 8px 4px; touch-action: manipulation; }
+    .mgbtns .btn small { display: block; font-size: 10px; opacity: .6; }
+    .mgholes { display: grid; grid-template-columns: repeat(3, 84px); gap: 8px; }
+    .mghole { width: 84px; height: 72px; border: 3px solid #7a4e2d; background: #9b6a43; border-radius: 40px 40px 10px 10px; font-size: 38px; display: grid; place-items: center; cursor: pointer; position: relative; touch-action: manipulation; padding: 0; }
+    .mghole small { position: absolute; left: 6px; top: 2px; font-size: 10px; color: #fff; opacity: .6; }
+    .mghole.hit { background: #c98a5a; }
+    .mgbox { width: 96px; height: 76px; border: 3px solid var(--ink); display: grid; place-items: center; font-size: 36px; box-shadow: 3px 3px 0 var(--ink); }
+    .mgqueue { display: flex; gap: 6px; } .mgqueue div { width: 26px; height: 20px; border: 2px solid var(--ink); }
+    .mgtrucks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; max-width: 380px; }
+    .mgtrucks .btn { font-size: 13px; padding: 8px 2px; color: #fff; text-shadow: 1px 1px 0 var(--ink); touch-action: manipulation; }
+    .mgside { display: grid; gap: 8px; align-content: start; font-size: 12px; }
+    .mgside .rows .row { padding: 4px 8px; }
+    .mgfx { position: absolute; right: 12px; top: 40px; font-size: 18px; font-weight: bold; animation: pop .3s ease-out; pointer-events: none; }
+    .shake { animation: shake .25s; } @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+    .ranklist { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 2px; font-size: 12px; }
+    .ranklist li { display: flex; justify-content: space-between; background: #fff; border: 2px solid #f2e6c9; padding: 2px 6px; }
+    .ranklist li.me { border-color: var(--pink); }
     /* 📱 휴대폰 */
     html, body { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     #modalBody, #log, #who { touch-action: pan-y; }
@@ -275,6 +327,7 @@
     <button id="lvBox" class="btn" data-open="level"><b id="lvText">Lv.1</b><span class="lvbar"><i id="lvBar"></i></span></button>
     <span id="hpBox" class="hpbox"><b id="hpText">❤️ 100</b><span class="hpbar"><i id="hpBar"></i></span></span>
     <span id="coins">💰 0</span>
+    <button class="btn" data-open="travel" id="travelBtn">🗺️<span class="lbl"> 이동</span> <small>T</small></button>
     <button class="btn" data-open="bag">🎒<span class="lbl"> 가방</span> <small>I</small></button>
     <button class="btn" data-open="avatar">👗<span class="lbl"> 꾸미기</span> <small>C</small></button>
     <button class="btn" data-open="quests">📜<span class="lbl"> 퀘스트</span> <small>Q</small><span id="qBadge" class="badge"></span></button>
@@ -284,7 +337,7 @@
   </div>
   <div id="side" class="hidden">
     <div id="mmWrap" class="panel">
-      <div class="cap"><b>🗺️ 지도</b><span>누르면 크게 · M</span></div>
+      <div class="cap"><b id="mmPlace">🏠 마을</b><span>누르면 크게 · M</span></div>
       <canvas id="minimap" width="170" height="136"></canvas>
     </div>
     <div id="who" class="panel"><b>접속 중 0명</b><ul></ul></div>
@@ -349,8 +402,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=11"></script>
-  <script src="draw.js?v=11"></script>
-  <script src="client.js?v=11"></script>
+  <script src="shared.js?v=12"></script>
+  <script src="draw.js?v=12"></script>
+  <script src="client.js?v=12"></script>
 </body>
 </html>

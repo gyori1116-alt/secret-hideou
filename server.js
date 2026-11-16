@@ -46,7 +46,7 @@ async function saveRaw(key, s) {
 // ───────── 월드 ─────────
 let world = null;           // { ground: string[][], objects: Map<"x,y", obj> }
 let chests = new Map();     // "x,y" -> { items: [], owner, locked } (상자 안 물건은 서버만 알고, 연 사람에게만 보내요)
-let board = { posts: [], nextId: 1, mvpWeek: null, lastMvp: null };  // 마을 게시판 (건의함 + 금주의 MVP)
+let board = { posts: [], nextId: 1, mvpWeek: null, lastMvp: null, mg: {} };  // 마을 게시판 (건의함 + 금주의 MVP) + 💼 알바 순위
 let boardDirty = false;
 let profiles = {};          // 이름(소문자) -> 프로필
 let worldDirty = false, profilesDirty = false;
@@ -186,6 +186,10 @@ function ensureProfile(pr) {
   // 이미 가진 칭호는 '본 것'으로 (처음 한 번은 알림 없이)
   if (!Array.isArray(pr.titlesSeen)) pr.titlesSeen = S.TITLES.filter((t) => S.titleOk(pr, t)).map((t) => t.id);
   pr.mail = pr.mail || [];
+  // v8 스토리 퀘스트
+  if (!pr.story || !Array.isArray(pr.story.done)) pr.story = { done: [], active: {} };
+  pr.story.active = pr.story.active || {};
+  for (const id of Object.keys(pr.story.active)) if (!S.STORY_BY[id]) delete pr.story.active[id];
   if (pr.recover && Object.keys(pr.recover).length) pr.mail.push({ title: '📮 예전에 가방이 꽉 차서 못 받은 보상', items: pr.recover });
   delete pr.recover;
   if (!pr.col) {
@@ -252,7 +256,7 @@ function sendMe(p) {
   const per = S.periods(Date.now());
   p.socket.emit('me', {
     coins: pr.coins, inv: pr.inv, stats: pr.stats, claimed: pr.claimed, unlocked: pr.unlocked, avatar: pr.avatar,
-    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, mail: pr.mail, exp: pr.exp, wk: curWk(pr), job: pr.job, jobQuest: pr.jobQuest || null, jobsDone: pr.jobsDone, equip: pr.equip, title: pr.title, hp: p.hp, maxHp: maxOf(p), def: defOf(p), ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
+    col: pr.col, colClaimed: pr.colClaimed, pq: pr.pq, dlv: pr.dlv, mail: pr.mail, exp: pr.exp, wk: curWk(pr), job: pr.job, story: pr.story, jobQuest: pr.jobQuest || null, jobsDone: pr.jobsDone, equip: pr.equip, title: pr.title, hp: p.hp, maxHp: maxOf(p), def: defOf(p), ends: { d: per.d.ends, w: per.w.ends, m: per.m.ends }, now: Date.now(),
   });
   updateHeld(p);
   profilesDirty = true;
@@ -665,8 +669,10 @@ function handleAct(p, type, x, y, slot, rot) {
     const def = S.ITEMS[it.id];
     if (!def) return null;
     const take = () => { it.n -= 1; if (it.n <= 0) p.prof.inv[slot] = null; };
+    const gFixed = !!(S.GROUND[g] && S.GROUND[g].fixed); // 경계·낚시터 다리는 못 바꿔요
 
     if (def.weapon) return null; // 무기는 공격(attack)으로
+    if (gFixed && (def.tool === 'hoe' || def.ground || def.obj || def.animal || def.seed)) return '여기는 바꿀 수 없어요';
     if (def.armor) return '🛡️ 갑옷은 가방(I)에서 눌러서 장착해요';
     if (def.heal) {
       if (p.hp >= maxOf(p)) return '체력이 가득해요 ❤️';
@@ -782,8 +788,10 @@ function handleAct(p, type, x, y, slot, rot) {
 const mobs = new Map();
 const mobSlots = [];        // 몬스터가 나오는 자리 (죽으면 시간이 지나 다시 나와요)
 let nextMobId = 1, mobsDirty = false, lastMobSync = 0;
-const MOB_VIEW_Y = (S.TY + 20) * TILE; // 이 줄보다 위(던전 지대 근처)에 있는 사람만 몬스터 위치를 받아요
 const inDungeon = (p) => p.y < S.TY * TILE;
+// 🗺️ 지금 있는 장소 (경계 위면 null)
+const placeOf = (p) => S.placeAt(Math.floor(p.x / TILE), Math.floor((p.y - 4) / TILE));
+const placeSpawn = (k) => { const sp = S.PLACES[k].spawn; return [sp[0] * TILE, sp[1] * TILE]; };
 function teleport(p, x, y) {
   if (p.pose) setPose(p, null);
   endFishing(p, null);
@@ -1042,8 +1050,9 @@ function execTrade(T) {
   const oa = T.offer[T.a], ob = T.offer[T.b];
   const valid = (p, o) => p.prof.coins >= o.coins && Object.entries(o.items).every(([id, n]) => S.canTrade(id) && S.countItem(p.prof.inv, id) >= n);
   if (!valid(pa, oa) || !valid(pb, ob)) { T.ready = {}; sendTrade(T); return; }
+  // ⚠️ 칸의 다른 값(강화 en, 펫 이름 pname)도 그대로 복사해요 (예전엔 id·n만 복사해서, 거래하면 강화가 전부 +0으로 돌아갔어요)
   const sim = (p, give, get) => {
-    const inv = p.prof.inv.map((it) => (it ? { id: it.id, n: it.n } : null));
+    const inv = p.prof.inv.map((it) => (it ? Object.assign({}, it) : null));
     for (const [id, n] of Object.entries(give.items)) S.removeItem(inv, id, n);
     for (const [id, n] of Object.entries(get.items)) if (S.addItem(inv, id, n) > 0) return null;
     return inv;
@@ -1062,6 +1071,89 @@ function execTrade(T) {
   pa.socket.emit('reward', { title: `🤝 ${pb.name} 님과 거래 완료!`, coins: ob.coins, items: ob.items });
   pb.socket.emit('reward', { title: `🤝 ${pa.name} 님과 거래 완료!`, coins: oa.coins, items: oa.items });
   sendMe(pa); sendMe(pb);
+}
+
+// ───────── 🧑‍🌾 마을 사람 · 📖 스토리 퀘스트 ─────────
+const npcPos = new Map();   // id → [x, y]
+function indexNpcs() { npcPos.clear(); for (const [k, o] of world.objects) if (o.t === 'npc') npcPos.set(o.id, k.split(',').map(Number)); }
+const nearNpc = (p, id) => { const pos = npcPos.get(id); return !!pos && inReach(p, pos[0], pos[1], TILE * 2); };
+
+// ───────── 💼 알바 미니게임 (혼자 / 방 만들어서 최대 4명) ─────────
+const mgRooms = new Map();
+let nextMgId = 1;
+const MG_IDS = Object.keys(S.MINIGAMES);
+const mgView = (r) => ({
+  id: r.id, game: r.game, host: r.host, state: r.state, solo: !!r.solo, seed: r.seed, startAt: r.startAt, dur: S.MINIGAMES[r.game].dur,
+  members: r.members.map((pid) => ({ id: pid, name: players[pid] ? players[pid].name : '?', score: r.scores[pid] == null ? null : r.scores[pid], live: r.live[pid] || 0 })),
+});
+const mgLobby = (p) => ({ rooms: [...mgRooms.values()].filter((r) => r.state === 'wait' && !r.solo).map(mgView), ranks: board.mg, my: p.mg && mgRooms.get(p.mg) ? mgView(mgRooms.get(p.mg)) : null });
+function sendMgLobbyAll() { for (const q of Object.values(players)) if (q.viewMg) q.socket.emit('mg', mgLobby(q)); }
+function sendMgRoom(r) { for (const pid of r.members) if (players[pid]) players[pid].socket.emit('mgRoom', mgView(r)); }
+function mgLeave(p) {
+  const r = p.mg && mgRooms.get(p.mg);
+  p.mg = null;
+  if (!r) return;
+  r.members = r.members.filter((x) => x !== p.id);
+  if (!r.members.length) { clearTimeout(r.timer); mgRooms.delete(r.id); }
+  else {
+    if (r.host === p.id) r.host = r.members[0];
+    if (r.state === 'play') mgCheckEnd(r); else sendMgRoom(r);
+  }
+  sendMgLobbyAll();
+}
+function mgCreate(p, game, solo) {
+  if (p.mg) mgLeave(p);
+  const r = { id: 'g' + nextMgId++, game, host: p.id, members: [p.id], state: 'wait', solo, scores: {}, live: {}, seed: 0, startAt: 0 };
+  mgRooms.set(r.id, r);
+  p.mg = r.id;
+  return r;
+}
+function mgStart(r) {
+  r.state = 'play';
+  r.seed = Math.floor(rand() * 2147483647);
+  r.startAt = Date.now() + 3500;   // 3초 카운트다운
+  r.scores = {}; r.live = {};
+  clearTimeout(r.timer);
+  r.timer = setTimeout(() => mgFinish(r), 3500 + S.MINIGAMES[r.game].dur * 1000 + 15000);
+  for (const pid of r.members) if (players[pid]) players[pid].socket.emit('mgStart', mgView(r));
+  sendMgLobbyAll();
+}
+function mgCheckEnd(r) { if (r.members.every((pid) => r.scores[pid] != null)) mgFinish(r); }
+// 순위표 (게임마다 한 사람당 최고 점수, 위 10명). 들어가면 몇 등인지
+function mgRecord(game, q, score) {
+  const list = board.mg[game] = board.mg[game] || [];
+  const k = q.key;
+  const old = list.find((e) => e.name.toLowerCase() === k);
+  if (old && old.score >= score) return 0;
+  if (old) { old.score = score; old.t = Date.now(); old.name = q.name; } else list.push({ name: q.name, score, t: Date.now() });
+  list.sort((a, b) => b.score - a.score);
+  if (list.length > 10) list.length = 10;
+  boardDirty = true;
+  const i = list.findIndex((e) => e.name.toLowerCase() === k);
+  return i < 0 ? 0 : i + 1;
+}
+function mgFinish(r) {
+  if (r.state !== 'play') return;
+  clearTimeout(r.timer);
+  const G = S.MINIGAMES[r.game];
+  const entries = r.members.filter((pid) => r.scores[pid] != null && players[pid]).map((pid) => [pid, r.scores[pid]]).sort((a, b) => b[1] - a[1]);
+  const coop = entries.length > 1;
+  const rows = entries.map(([pid, sc], i) => {
+    const q = players[pid];
+    let pay = S.mgPay(r.game, sc, coop);
+    if (coop && i === 0 && sc > 0) pay = Math.round(pay * 1.15); // 같이 하면 1등 보너스
+    q.prof.coins += pay;
+    stat(q, 'mgPlay'); stat(q, 'mgCoins', pay); stat(q, 'mg_' + r.game);
+    addExp(q, Math.max(1, Math.round(pay / 6)));
+    const rank = mgRecord(r.game, q, sc);
+    if (rank === 1) sys(`👑 ${q.name} 님이 ${G.name} 신기록 ${sc.toLocaleString()}점을 세웠어요!`);
+    return { name: q.name, score: sc, pay, rank: i + 1, record: rank };
+  });
+  for (const pid of r.members) if (players[pid]) { players[pid].socket.emit('mgResult', { game: r.game, rows, coop }); sendMe(players[pid]); }
+  r.state = 'wait'; r.scores = {}; r.live = {};
+  if (r.solo) { mgRooms.delete(r.id); for (const pid of r.members) if (players[pid]) players[pid].mg = null; }
+  else sendMgRoom(r);
+  sendMgLobbyAll();
 }
 
 // ───────── 접속 ─────────
@@ -1100,7 +1192,7 @@ io.on('connection', (socket) => {
     let prof = profiles[k];
     const isNew = !prof;
     if (!prof) {
-      prof = profiles[k] = { name, coins: 100, inv: S.starterInventory(), stats: {}, claimed: [], unlocked: S.FREE_ACC.slice(), avatar: S.defaultAvatar(rand), x: null, y: null, mapV: 7 };
+      prof = profiles[k] = { name, coins: 100, inv: S.starterInventory(), stats: {}, claimed: [], unlocked: S.FREE_ACC.slice(), avatar: S.defaultAvatar(rand), x: null, y: null, mapV: 7, fix8: 1 };
     }
     ensureProfile(prof);
     refreshPQ(prof);
@@ -1113,6 +1205,8 @@ io.on('connection', (socket) => {
     p.hp = isNum(prof.hp) && prof.hp > 0 ? Math.min(prof.hp, maxOf(p)) : maxOf(p); p.lastHit = 0; p.lastAtk = 0;
     // 던전 안에서 나갔으면 마을에서 시작 (던전 앞마당은 그대로)
     if (S.DUNGEONS.some((q) => p.x >= q.x0 * TILE && p.x < (q.x1 + 1) * TILE && p.y < (q.gate.y + 1) * TILE)) { p.x = S.SPAWN.x; p.y = S.SPAWN.y; }
+    // 경계(void)나 막힌 칸에 서 있으면 마을에서 시작
+    if (!placeOf(p) || blockedAt(p.x, p.y)) { p.x = S.SPAWN.x; p.y = S.SPAWN.y; }
     socket.join(ROOM);
     const ps = {};
     for (const q of Object.values(players)) ps[q.id] = pub(q);
@@ -1120,7 +1214,116 @@ io.on('connection', (socket) => {
     sendMe(p);
     socket.to(ROOM).emit('playerJoined', pub(p));
     if (!data.rejoin) sys(isNew ? `${prof.name} 님이 처음으로 놀러 왔어요! 🎉` : `${prof.name} 님이 들어왔어요 🏠`);
+    if (prof.fixMsg) { const m = prof.fixMsg; delete prof.fixMsg; setTimeout(() => toast(socket, m), 1500); }
     stateDirty = true;
+  });
+
+  // 🗺️ 장소 이동 ([이동] 버튼)
+  let lastTravel = 0;
+  socket.on('travel', ({ place } = {}) => {
+    const p = me();
+    if (!p || !S.PLACES[place]) return;
+    if (Date.now() - lastTravel < 1500) return;
+    if (p.trade) return toast(socket, '거래 중에는 이동할 수 없어요');
+    if (p.mg && mgRooms.get(p.mg) && mgRooms.get(p.mg).state === 'play') return toast(socket, '알바 중에는 이동할 수 없어요');
+    if (placeOf(p) === place && !inDungeon(p)) return toast(socket, `이미 ${S.PLACES[place].name}에 있어요`);
+    lastTravel = Date.now();
+    const [x, y] = placeSpawn(place);
+    teleport(p, x + (rand() * 12 - 6), y);
+    stat(p, 'travel');
+    stat(p, 'visit_' + place);
+    toast(socket, `${S.PLACES[place].name}(으)로 왔어요! ${S.PLACES[place].desc}`);
+    sendMe(p);
+  });
+
+  // 📖 스토리 퀘스트: 받기 / 끝내기 / 그만두기
+  socket.on('storyAccept', ({ id } = {}) => {
+    const p = me(), q = S.STORY_BY[id];
+    if (!p || !q) return;
+    const pr = p.prof;
+    if (!S.storyAvail(pr, q, lvOf(pr))) return;
+    if (!nearNpc(p, q.npc)) return toast(socket, `${S.NPCS[q.npc].name}에게 더 가까이 가 주세요`);
+    const bs = S.storyBaseStat(q.goal);
+    pr.story.active[id] = { base: bs ? (pr.stats[bs] || 0) : 0, at: Date.now() };
+    toast(socket, `📖 「${q.name}」 퀘스트를 받았어요! → ${q.t}`);
+    sendMe(p);
+  });
+  socket.on('storyDone', ({ id, npc } = {}) => {
+    const p = me(), q = S.STORY_BY[id];
+    if (!p || !q || !S.NPCS[npc]) return;
+    const pr = p.prof;
+    if (!S.storyReady(pr, q, npc)) return toast(socket, '아직 다 못 했어요');
+    if (!nearNpc(p, npc)) return toast(socket, `${S.NPCS[npc].name}에게 더 가까이 가 주세요`);
+    const remove = q.goal.type === 'item' ? { [q.goal.item]: q.goal.n } : null;
+    if (!room(p, q.reward.items, remove)) return;
+    if (remove) S.removeItem(pr.inv, q.goal.item, q.goal.n);
+    delete pr.story.active[id];
+    pr.story.done.push(id);
+    stat(p, 'storyDone');
+    if (q.final) stat(p, 'story_final');
+    grant(p, `📖 「${q.name}」 완료!`, q.reward);
+    if (q.final) sys(`🌟 ${p.name} 님이 마을의 수호별을 되살렸어요! 마을의 영웅 탄생! 🌟`);
+    else if (+q.id.slice(1) >= 25) sys(`📖 ${p.name} 님이 스토리 「${q.name}」을(를) 깼어요!`);
+    sendMe(p);
+  });
+  socket.on('storyDrop', ({ id } = {}) => {
+    const p = me();
+    if (!p || !p.prof.story.active[id]) return;
+    delete p.prof.story.active[id];
+    toast(socket, '퀘스트를 그만뒀어요. 다시 받을 수 있어요');
+    sendMe(p);
+  });
+
+  // 💼 알바 미니게임
+  socket.on('mgOpen', () => { const p = me(); if (p) { p.viewMg = true; socket.emit('mg', mgLobby(p)); } });
+  socket.on('mgClose', () => { const p = me(); if (p) p.viewMg = false; });
+  const mgNear = (p) => { if (nearNpc(p, 'boss') || (npcPos.get('boss') && inReach(p, npcPos.get('boss')[0], npcPos.get('boss')[1], TILE * 5))) return true; toast(socket, '마을의 알바 사장님 가까이에서 해요 💼'); return false; };
+  socket.on('mgSolo', ({ game } = {}) => {
+    const p = me();
+    if (!p || !MG_IDS.includes(game) || !mgNear(p)) return;
+    if (p.mg && mgRooms.get(p.mg) && mgRooms.get(p.mg).state === 'play') return;
+    mgStart(mgCreate(p, game, true));
+  });
+  socket.on('mgCreate', ({ game } = {}) => {
+    const p = me();
+    if (!p || !MG_IDS.includes(game) || !mgNear(p)) return;
+    if (p.mg && mgRooms.get(p.mg) && mgRooms.get(p.mg).state === 'play') return;
+    const r = mgCreate(p, game, false);
+    sendMgRoom(r); sendMgLobbyAll();
+    sys(`💼 ${p.name} 님이 ${S.MINIGAMES[game].name} 방을 만들었어요! 마을 알바 사장님에게서 같이 해요`);
+  });
+  socket.on('mgJoin', ({ id } = {}) => {
+    const p = me(), r = mgRooms.get(id);
+    if (!p || !r || r.solo || !mgNear(p)) return;
+    if (r.state !== 'wait') return toast(socket, '이미 시작한 방이에요');
+    if (r.members.length >= 4) return toast(socket, '방이 꽉 찼어요 (최대 4명)');
+    if (r.members.includes(p.id)) return;
+    if (p.mg) mgLeave(p);
+    r.members.push(p.id); p.mg = r.id;
+    sendMgRoom(r); sendMgLobbyAll();
+  });
+  socket.on('mgLeave', () => { const p = me(); if (p) { mgLeave(p); socket.emit('mgRoom', null); } });
+  socket.on('mgGo', () => {
+    const p = me(), r = p && p.mg && mgRooms.get(p.mg);
+    if (!r || r.host !== p.id || r.state !== 'wait') return;
+    mgStart(r);
+  });
+  let lastLive = 0;
+  socket.on('mgLive', ({ score } = {}) => {
+    const p = me(), r = p && p.mg && mgRooms.get(p.mg);
+    if (!r || r.state !== 'play' || r.solo || Date.now() - lastLive < 400 || !Number.isInteger(score)) return;
+    lastLive = Date.now();
+    r.live[p.id] = clamp(score, 0, S.MINIGAMES[r.game].max);
+    for (const pid of r.members) if (pid !== p.id && players[pid]) players[pid].socket.emit('mgLive', { id: p.id, score: r.live[p.id] });
+  });
+  socket.on('mgEnd', ({ score } = {}) => {
+    const p = me(), r = p && p.mg && mgRooms.get(p.mg);
+    if (!r || r.state !== 'play' || r.scores[p.id] != null || !Number.isInteger(score)) return;
+    const G = S.MINIGAMES[r.game];
+    if (Date.now() < r.startAt + G.dur * 1000 - 2500) return toast(socket, '아직 끝나지 않았어요');
+    r.scores[p.id] = clamp(score, 0, G.max);
+    sendMgRoom(r);
+    mgCheckEnd(r);
   });
 
   socket.on('move', (d = {}) => {
@@ -1129,6 +1332,10 @@ io.on('connection', (socket) => {
     if (p.pose && d.moving) setPose(p, null);
     if (p.pose) return;
     const nx = clamp(d.x, 0, W * TILE), ny = clamp(d.y, 0, H * TILE);
+    // 🗺️ 다른 장소로는 걸어서 못 가요 ([이동] 버튼으로만). 순간이동 직후에 늦게 온 예전 위치도 이렇게 걸러져요
+    const toPl = S.placeAt(Math.floor(nx / TILE), Math.floor((ny - 4) / TILE));
+    const fromPl = placeOf(p);
+    if (fromPl && toPl !== fromPl) return;
     // 던전 안으로는 문(E)으로만: 레벨이 모자라거나 갑자기 멀리서 들어오면 밖으로
     const dg = S.DUNGEONS.find((q) => nx >= q.x0 * TILE && nx < (q.x1 + 1) * TILE && ny < (q.gate.y + 1) * TILE);
     if (dg && (lvOf(p.prof) < dg.lv || Math.hypot(nx - p.x, ny - p.y) > TILE * 6)) { teleport(p, dg.outside.x * TILE + 8, dg.outside.y * TILE + 12); return; }
@@ -1156,7 +1363,7 @@ io.on('connection', (socket) => {
     if (!text) return;
     stat(p, 'chat');
     sendMe(p);
-    pushChat({ id: p.id, name: p.name, color: S.CLOTH[p.avatar.tc], text, t: now });
+    pushChat({ id: p.id, name: p.name, color: S.CLOTH[p.avatar.tc], text, t: now, place: placeOf(p) }); // 채팅은 어느 장소에서든 다 보여요
   });
 
   socket.on('typing', (on) => { if (me()) socket.to(ROOM).emit('typing', { id: socket.id, on: !!on }); });
@@ -1269,7 +1476,8 @@ io.on('connection', (socket) => {
     const p = me();
     if (!p || !Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a >= p.prof.inv.length || b >= p.prof.inv.length) return;
     const inv = p.prof.inv;
-    if (inv[a] && inv[b] && inv[a].id === inv[b].id && a !== b) {
+    const plain = (it) => !it.en && !it.pname;
+    if (inv[a] && inv[b] && inv[a].id === inv[b].id && a !== b && plain(inv[a]) && plain(inv[b]) && S.ITEMS[inv[a].id].stack > 1) {
       const max = S.ITEMS[inv[a].id].stack;
       const k = Math.min(inv[a].n, max - inv[b].n);
       inv[b].n += k; inv[a].n -= k;
@@ -1701,6 +1909,7 @@ io.on('connection', (socket) => {
     const p = me();
     if (!p) return;
     endFishing(p, null);
+    mgLeave(p);
     if (p.trade && trades.get(p.trade)) endTrade(trades.get(p.trade), `${p.name} 님이 나가서 거래가 취소됐어요`);
     p.prof.x = p.x; p.prof.y = p.y;
     profilesDirty = true;
@@ -1875,15 +2084,15 @@ setInterval(() => {
     } else if (t) {
       const d = Math.hypot(t.x - m.x, t.y - m.y);
       if (d > reach) { tx = t.x; ty = t.y; }
-      else if (now - m.atkAt > (def.boss ? 1500 : 1200)) {
-        const ms = def.boss ? 650 : 480;
+      else if (now - m.atkAt > (def.boss ? 1300 : 1000)) { // v8: 공격이 조금 더 잦아요
+        const ms = def.boss ? 620 : 460;
         m.windUp = now + ms; m.windTarget = t.id;
         io.to(ROOM).emit('matk', { id: m.id, ms });
       }
       if (def.boss && now >= m.stompAt) {
-        // 보스 내려찍기: 빨간 원으로 0.9초 예고 → 원 안에 있으면 맞아요
-        m.stompAt = now + 7000; m.stompHit = now + 900;
-        io.to(ROOM).emit('mstomp', { x: m.x, y: m.y, r: 60, ms: 900 });
+        // 보스 내려찍기: 빨간 원으로 0.9초 예고 → 원 안에 있으면 맞아요 (체력이 절반 아래면 더 자주, 높은 성일수록 더 넓게)
+        m.stompAt = now + (m.hp < m.max / 2 ? 4500 : 6000); m.stompHit = now + 900; m.stompR = def.star >= 4 ? 76 : 64;
+        io.to(ROOM).emit('mstomp', { x: m.x, y: m.y, r: m.stompR, ms: 900 });
       }
     } else if (homeD > TILE * 3) { tx = m.slot.x; ty = m.slot.y; }
     else {
@@ -1893,7 +2102,7 @@ setInterval(() => {
     if (m.stompHit && now >= m.stompHit) {
       m.stompHit = 0;
       io.to(ROOM).emit('fx', { x: m.x, y: m.y - 10, text: '💥' });
-      for (const p of plist) if (Math.hypot(p.x - m.x, p.y - m.y) < 60) hurtPlayer(p, Math.round(def.atk * 0.7), def.name);
+      for (const p of plist) if (Math.hypot(p.x - m.x, p.y - m.y) < (m.stompR || 64)) hurtPlayer(p, Math.round(def.atk * 0.75), def.name);
     }
     const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
     const was = m.moving;
@@ -1915,7 +2124,7 @@ setInterval(() => {
   if (mobsDirty || now - lastMobSync > 1000) {
     mobsDirty = false; lastMobSync = now;
     const list = [...mobs.values()].map(pubMob);
-    for (const p of Object.values(players)) if (p.y < MOB_VIEW_Y) p.socket.volatile.emit('mobs', list);
+    for (const p of Object.values(players)) if (placeOf(p) === 'dungeon') p.socket.volatile.emit('mobs', list);
   }
 }, 100);
 
@@ -2003,9 +2212,77 @@ function computeRecover(pr) {
     for (const c of chests.values()) if (c.owner && c.owner.toLowerCase() === k) have += S.countItem(c.items, id);
     if (d.obj) for (const o of world.objects.values()) { if (o.t === d.obj) have++; if (o.top === d.obj) have++; }
     if (d.animal) for (const a of animals.values()) if (a.kind === d.animal && a.owner && a.owner.toLowerCase() === k) have++;
+    for (const m of pr.mail || []) have += (m.items && m.items[id]) || 0; // 우편함에 아직 있는 것도 셈해요
     if (n > have) missing[id] = n - have;
   }
   return missing;
+}
+// v8 한 번만: ① 퀘스트 보상 다시 확인 ② 기본 도구(괭이·물뿌리개·낚싯대)가 하나도 없으면 돌려주기
+// ③ 거래 버그로 +0이 된 강화: 지금 가진 무기의 강화가 기록(enMax)보다 낮으면 가장 좋은 무기에 되돌려요
+function fixV8(pr) {
+  const k = pr.name.toLowerCase();
+  const m = computeRecover(pr);
+  const owned = (ids) => {
+    let n = 0;
+    for (const id of ids) {
+      n += S.countItem(pr.inv, id);
+      for (const c of chests.values()) if (c.owner && c.owner.toLowerCase() === k) n += S.countItem(c.items, id);
+      for (const ml of pr.mail || []) n += (ml.items && ml.items[id]) || 0;
+    }
+    return n;
+  };
+  if (!owned(['hoe'])) m.hoe = 1;
+  if (!owned(['can', 'can_gold'])) m.can = 1;
+  if (!owned(['rod', 'rod_gold'])) m.rod = 1;
+  if (Object.keys(m).length) pr.mail.push({ title: '📮 사라졌던 물건을 돌려드려요 (v8 점검)', items: m });
+  const enMax = (pr.stats && pr.stats.enMax) || 0;
+  let best = 0;
+  for (const it of pr.inv) if (it && it.en) best = Math.max(best, it.en);
+  for (const c of chests.values()) if (c.owner && c.owner.toLowerCase() === k) for (const it of c.items) if (it && it.en) best = Math.max(best, it.en);
+  if (enMax > best) {
+    const ws = pr.inv.filter((it) => it && S.ITEMS[it.id] && S.ITEMS[it.id].weapon);
+    const fit = (it) => (!S.ITEMS[it.id].cls || S.ITEMS[it.id].cls === pr.job ? 1 : 0);
+    ws.sort((a, b) => fit(b) - fit(a) || S.ITEMS[b.id].atk - S.ITEMS[a.id].atk || (a.en || 0) - (b.en || 0));
+    if (ws[0]) {
+      ws[0].en = enMax;
+      pr.fixMsg = `🔨 거래 때문에 사라졌던 강화를 되돌렸어요: ${S.itemLabel(ws[0])} ✨`;
+      console.log(`🔨 ${pr.name}: 강화 복구 → ${S.itemLabel(ws[0])}`);
+    }
+  }
+  if (Object.keys(m).length) console.log(`📮 ${pr.name} 님에게 돌려줄 물건:`, JSON.stringify(m));
+}
+// v7 지도 → v8: 장소 나누기 (던전 5곳, 🌾 농장·🐄 목장·🎣 낚시터, 까만 경계). 지은 집은 그대로.
+function upgradeWorldV8() {
+  const before = [...chests.keys()];
+  const v = S.toV8(world.ground, Object.fromEntries(world.objects));
+  world = { ground: v.ground, objects: new Map(Object.entries(v.objects)) };
+  // 자리가 없어진 상자 속 물건 → 주인 우편함
+  for (const k of before) {
+    if (isChestObj(world.objects.get(k))) continue;
+    const c = chests.get(k);
+    chests.delete(k);
+    const items = {};
+    for (const it of (c && c.items) || []) if (it) items[it.id] = (items[it.id] || 0) + it.n;
+    const pr = c && c.owner && profiles[c.owner.toLowerCase()];
+    if (pr && Object.keys(items).length) { pr.mail = pr.mail || []; pr.mail.push({ title: '📦 지도가 바뀌어서 옮겨드린 상자 속 물건', items }); }
+  }
+  // 동물: 마을 동물 우리에 있던 동물 · 막힌 곳에 있는 동물 → 🐄 목장으로
+  const pens = { chicken: [77, 96], duck: [77, 96], cow: [102, 121], sheep: [102, 121], goat: [102, 121], pig: [127, 140] };
+  const penX0 = S.TX + 39, penX1 = S.TX + 59, penY0 = S.TY + 26, penY1 = S.TY + 34;
+  for (const a of [...animals.values()]) {
+    const def = S.ANIMALS[a.kind], tx = Math.floor(a.x / TILE), ty = Math.floor(a.y / TILE), pl = S.placeAt(tx, ty);
+    if (def.wild) { if (!pl || pl === 'fishing' || blockedAt(a.x, a.y)) animals.delete(a.id); continue; }
+    if (def.pet) { if (!pl || blockedAt(a.x, a.y)) { a.x = a.tx = a.hx = S.SPAWN.x + 20; a.y = a.ty = a.hy = S.SPAWN.y + 16; } continue; }
+    const inPen = tx >= penX0 && tx <= penX1 && ty >= penY0 && ty <= penY1;
+    if (inPen || !pl || pl === 'fishing' || blockedAt(a.x, a.y)) {
+      const [x0, x1] = pens[a.kind] || [102, 121];
+      a.x = a.tx = a.hx = (x0 + rand() * (x1 - x0)) * TILE + 8;
+      a.y = a.ty = a.hy = (160 + rand() * 10) * TILE + 12;
+    }
+  }
+  for (const a of v.animals) spawnAnimal(a);
+  animalsDirty = worldDirty = true;
+  console.log('🗺️  v8 지도로 바꿨어요: 장소 나누기 + 던전 5곳 + 농장·목장·낚시터 (예전 맵은 world_backup_v7)');
 }
 
 function migrateWorld(saved) {
@@ -2036,14 +2313,23 @@ function upgradeWorldV4(saved) {
 }
 (async () => {
   profiles = await loadProfiles();
-  board =Object.assign(board, (await loadData('board')) || {});
+  board = Object.assign(board, (await loadData('board')) || {});
+  board.mg = board.mg || {};
+  for (const g of MG_IDS) board.mg[g] = board.mg[g] || [];
   const saved = process.env.RESET_WORLD ? null : await loadData('world');
   let legacy = false; // 예전 크기(100×112) 지도면 아래에서 v7 로 옮겨요
+  let needV8 = false; // v7 지도면 v8 로 (장소 나누기)
   if (saved && saved.version === S.WORLD_VERSION && saved.w === W && saved.h === H) {
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
     chests = new Map(Object.entries(saved.chests || {}));
     (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
     console.log('🗺️  저장된 맵을 불러왔어요');
+  } else if (saved && saved.version === 7 && saved.w === W && saved.h === S.H7) {
+    await saveData('world_backup_v7', saved);
+    world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
+    chests = new Map(Object.entries(saved.chests || {}));
+    (saved.animals || []).forEach((a) => { if (S.ANIMALS[a.kind]) spawnAnimal(a); });
+    needV8 = true;
   } else if (saved && saved.version === 6 && saved.w === S.W0 && saved.h === S.H0) {
     await saveData('world_backup_v6', saved);
     world = { ground: saved.ground, objects: new Map(Object.entries(saved.objects)) };
@@ -2092,13 +2378,17 @@ function upgradeWorldV4(saved) {
       pr.mapV = 7;
     }
     worldDirty = profilesDirty = true;
+    needV8 = true;
     console.log('🗺️  v7 지도로 넓혔어요: 위쪽 던전 지대 + 왼쪽 새 땅 (지은 건물은 그대로 옮겼어요)');
   }
+  if (needV8) upgradeWorldV8();
+  indexNpcs();
   initMobSlots();
   if (Object.keys(profiles).length && !(await loadData('profiles_backup_v5'))) {
     await saveData('profiles_backup_v5', profiles);
     console.log('💾 업데이트 전 프로필을 profiles_backup_v5 에 따로 보관했어요');
   }
+  const fixedKeys = new Set();
   for (const pr of Object.values(profiles)) {
     ensureProfile(pr);
     // 한 번만: 예전에 가방이 꽉 차서 사라졌을 수 있는 보상 찾기 → 📮 우편함에서 돌려받아요
@@ -2110,10 +2400,12 @@ function upgradeWorldV4(saved) {
         console.log(`📮 ${pr.name} 님에게 돌려줄 보상:`, JSON.stringify(m));
       }
     }
+    if (!pr.fix8) { pr.fix8 = 1; fixV8(pr); fixedKeys.add(pr.name.toLowerCase()); }
     profilesDirty = true;
   }
   // 불러온 그대로인 프로필은 '저장됨'으로 표시: 켜지자마자 옛 내용을 다시 덮어쓰지 않게 (배포 중 두 서버가 겹칠 때 중요)
   for (const k of knownKeys) if (profiles[k]) savedProf.set(k, JSON.stringify(profiles[k]));
+  for (const k of fixedKeys) savedProf.delete(k); // v8 점검으로 바뀐 프로필은 저장해요
   checkMvpWeek();
   // 📢 새 업데이트면 채팅으로 공지 (게시판 '업데이트 소식' 탭에 자세히)
   const latest = S.UPDATES[0];

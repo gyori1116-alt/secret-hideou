@@ -15,6 +15,11 @@
   const gAt = (world, x, y) => (world ? world.g(x, y) : null);
   const oAt = (world, x, y) => (world ? world.o(x, y) : null);
   const RAINBOW = ['#ff6b6b', '#ffa94d', '#ffe066', '#69db7c', '#4dabf7', '#9775fa'];
+  // 던전 바닥·벽 색 (몇 성 던전인지에 따라)
+  const DUNGEON_FLOOR = { 1: ['#4f5a4a', '#5f6b58', '#43503f'], 2: ['#5b5560', '#6a6470', '#4d4852'], 3: ['#5a3a34', '#6b463e', '#4a2e2a'],
+    4: ['#7a9cb0', '#9cc0d4', '#5f8296'], 5: ['#2e2440', '#3d3155', '#221a30'] };
+  const DUNGEON_WALL = { 1: ['#6b7563', '#4f5a4a', '#343c30'], 2: ['#77717c', '#5b5560', '#3b3740'], 3: ['#7a4a40', '#5a3a34', '#3a221e'],
+    4: ['#c4e4f2', '#8fb8cc', '#5a8296'], 5: ['#4a3a63', '#2e2440', '#17101f'] };
 
   function drawRug(R, type, x, y, world, fill, border, dot) {
     R(fill, 0, 0, 16, 16);
@@ -120,13 +125,25 @@
         break;
       case 'dungeon': {
         const st = S.dungeonStar(x);
-        const [a, b, c] = st === 1 ? ['#4f5a4a', '#5f6b58', '#43503f'] : st === 2 ? ['#5b5560', '#6a6470', '#4d4852'] : ['#5a3a34', '#6b463e', '#4a2e2a'];
+        const [a, b, c] = DUNGEON_FLOOR[st] || DUNGEON_FLOOR[1];
         R(a, 0, 0, 16, 16); R(c, 0, 7, 16, 1); R(c, 8, 0, 1, 7); R(c, 3, 8, 1, 8); R(c, 12, 8, 1, 8);
         R(b, 1, 1, 3, 1); R(b, 9, 9, 3, 1);
         if (st === 1 && hash(x, y) < 0.2) R('#6e9e4a', 4, 3, 2, 1);
         if (st === 2 && hash(x, y) < 0.08) { R('#e6e0d6', 5, 11, 4, 1); R('#e6e0d6', 4, 10, 1, 3); }
+        if (st === 4 && hash(x, y) < 0.25) { R('#e8fbff', 3, 4, 3, 1); R('#e8fbff', 10, 12, 2, 1); }
+        if (st === 5 && hash(x, y) < 0.12) { R('#b48cff', 5, 3, 1, 1); R('#8a5cd6', 11, 11, 2, 1); }
         break;
       }
+      case 'void': // 장소 사이 까만 경계
+        R('#0b0a10', 0, 0, 16, 16);
+        if (hash(x, y) < 0.08) R('#2a2440', Math.floor(hash(y, x) * 14), Math.floor(hash(x * 3, y) * 14), 1, 1);
+        break;
+      case 'pier': // 낚시터 나무 다리
+        R('#63bde8', 0, 0, 16, 16);
+        R('#b88252', 1, 0, 14, 16);
+        for (let j = 0; j < 4; j++) R('#9c6b3f', 1, j * 4 + 3, 14, 1);
+        R('#7a4e2d', 1, 0, 1, 16); R('#7a4e2d', 14, 0, 1, 16); R('#d9a066', 3, 1, 4, 1);
+        break;
       case 'lava':
         R('#e8502a', 0, 0, 16, 16); R('#ffb02e', Math.floor(hash(x, y) * 10), 4, 4, 2); R('#ffd34d', Math.floor(hash(y, x) * 10) + 2, 11, 3, 1);
         if (world) { const e = (nx, ny) => gAt(world, nx, ny) !== 'lava'; if (e(x, y - 1)) R('#8a2e1a', 0, 0, 16, 2); if (e(x, y + 1)) R('#8a2e1a', 0, 14, 16, 2); }
@@ -748,7 +765,7 @@
       // ── 던전
       case 'dungeon_wall': {
         const st = S.dungeonStar(x);
-        const [top, front, line] = st === 1 ? ['#6b7563', '#4f5a4a', '#343c30'] : st === 2 ? ['#77717c', '#5b5560', '#3b3740'] : ['#7a4a40', '#5a3a34', '#3a221e'];
+        const [top, front, line] = DUNGEON_WALL[st] || DUNGEON_WALL[1];
         const below = oAt(world, x, y + 1);
         R(top, 0, 0, 16, 16); R(shade(top, 0.15), 0, 0, 16, 1);
         R(line, 0, 5, 16, 1); R(line, 7, 0, 1, 5); R(line, 3, 6, 1, 5); R(line, 11, 6, 1, 5); R(line, 0, 11, 16, 1);
@@ -756,7 +773,7 @@
         break;
       }
       case 'dungeon_gate': {
-        const col = ['#a8743f', '#9aa7b0', '#c0392b'][(o.star || 1) - 1];
+        const col = ['#a8743f', '#9aa7b0', '#c0392b', '#7fdcff', '#8a5cd6'][(o.star || 1) - 1] || '#a8743f';
         R('#3b3740', 0, 0, 16, 16); R('#2b2233', 2, 2, 12, 14); R(col, 1, 0, 14, 3); R(col, 1, 0, 2, 16); R(col, 13, 0, 2, 16);
         for (let i = 4; i < 13; i += 3) R('#5a5560', i, 3, 1, 13);
         R('#ffd34d', 5, 1, 1, 1); R('#ffd34d', 7, 1, 2, 1); R('#ffd34d', 10, 1, 1, 1);
@@ -766,6 +783,9 @@
       case 'dungeon_exit':
         R('rgba(0,0,0,0.15)', 2, 13, 12, 3);
         R('#5a5560', 2, 2, 12, 13); R('#7e6fe0', 4, 4, 8, 10); R('#b8adff', 6, 6, 4, 6); R('#ffffff', 7, 8, 2, 2);
+        break;
+      case 'npc': // 마을 사람은 화면에서 따로 그려요 (여기엔 그림자만)
+        R('rgba(0,0,0,0.15)', 3, 13, 10, 3);
         break;
       case 'job_master':
         R('rgba(0,0,0,0.15)', 2, 13, 12, 3);
@@ -1287,7 +1307,7 @@
   // ───────── 아이템 아이콘 (16×16) ─────────
   const FISH_COL = {
     fish_minnow: '#c8d6dc', fish_crucian: '#9aa7b0', fish_tropical: '#ffb36b', fish_puffer: '#f2d16b', fish_golden: '#ffd34d',
-    fish_trout: '#a7c48a', fish_salmon: '#ff9a7a', fish_blind: '#f0eef5',
+    fish_trout: '#a7c48a', fish_salmon: '#ff9a7a', fish_blind: '#f0eef5', fish_mackerel: '#5b8fb9', fish_tuna: '#3d5a80',
   };
   const SEED_COL = { carrot: '#ff8c3a', strawberry: '#e8364f', sunflower: '#ffd34d', pumpkin: '#ff9a2e', tomato: '#ff5c5c', corn: '#ffe066', potato: '#c9a26b', watermelon: '#3fa146' };
   // 요리 그림: [모양, 색1, 색2]
@@ -1326,12 +1346,13 @@
     long_bow: ['#8b5a3c', '#ffffff'], elf_bow: ['#7ed492', '#ffffff'], phoenix_bow: ['#ff7a1a', '#ffe066'],
     staff_basic: ['#a8743f', '#7fdcff'], crystal_staff: ['#c9c9d3', '#b48cff'], arch_staff: ['#4a3b5c', '#ff5c8a'],
     kunai: ['#9aa7b0', '#3b3740'], ninja_blade: ['#e6f0ff', '#2b2233'], shadow_blade: ['#8a5cd6', '#2b2233'],
+    abyss_sword: ['#b48cff', '#2b2233'], star_bow: ['#fff3a3', '#9b8cff'], void_staff: ['#2b2233', '#b48cff'], abyss_star: ['#6c3fb5', '#ffe066'],
   };
   function drawWeapon(R, id, it) {
     const [a, b] = WEAPON_COL[id] || ['#c4ced6', '#6e4626'];
     switch (it.weapon) {
       case 'sword': {
-        const big = id === 'hero_sword' ? 1 : 0;
+        const big = id === 'hero_sword' || id === 'abyss_sword' ? 1 : 0;
         for (let i = 0; i < 9; i++) R(a, 5 + i, 9 - i, 2 + big, 2);
         R(shade(a, 0.3), 6, 8, 1, 1); R(b, 2, 10, 6, 2); R(b, 4, 8, 2, 6); R('#6e4626', 2, 12, 2, 2); R('#ffd34d', 1, 13, 2, 2);
         break;
@@ -1339,7 +1360,8 @@
       case 'bow':
         for (let i = 0; i < 6; i++) { R(a, 3 + Math.round(i * 0.4), 2 + i, 2, 1); R(a, 3 + Math.round(i * 0.4), 13 - i, 2, 1); }
         R(b, 4, 2, 1, 12); R('#9aa7b0', 6, 7, 8, 1); R('#e85d5d', 13, 6, 2, 3);
-        if (id === 'phoenix_bow') { R('#ffe066', 2, 1, 2, 1); R('#ffe066', 2, 14, 2, 1); }
+        if (id === 'phoenix_bow' || id === 'star_bow') { R('#ffe066', 2, 1, 2, 1); R('#ffe066', 2, 14, 2, 1); }
+        if (id === 'star_bow') { R('#ffffff', 1, 7, 1, 1); R('#ffffff', 14, 3, 1, 1); }
         break;
       case 'staff':
         for (let i = 0; i < 10; i++) R(a, 3 + i, 13 - i, 2, 1);
@@ -1352,7 +1374,7 @@
           R(a, 7, 6 - L, 2, L); R(a, 7, 10, 2, L); R(a, 6 - L, 7, L, 2); R(a, 10, 7, L, 2);
           R(d, 8, 6 - L, 1, L); R(d, 7, 10, 1, L); R(d, 6 - L, 8, L, 1); R(d, 10, 7, L, 1);
           R(b, 7, 7, 2, 2);
-          if (id === 'shadow_blade') { R('#e6d9ff', 7, 6 - L, 1, 1); R('#e6d9ff', 8, 9 + L, 1, 1); }
+          if (id === 'shadow_blade' || id === 'abyss_star') { R('#e6d9ff', 7, 6 - L, 1, 1); R('#e6d9ff', 8, 9 + L, 1, 1); }
         }
         break;
     }
@@ -1400,6 +1422,8 @@
       if (id === 'fish_golden') { R('#ffffff', 1, 2, 1, 1); R('#ffffff', 13, 2, 1, 1); R('#fff3a3', 6, 8, 3, 1); }
       if (id === 'fish_trout') { R('#e88a8a', 4, 9, 7, 1); R('#5f7f4a', 6, 6, 1, 1); R('#5f7f4a', 9, 7, 1, 1); }
       if (id === 'fish_salmon') { R('#ffcab5', 4, 9, 7, 1); }
+      if (id === 'fish_mackerel') { for (let i = 5; i < 11; i += 2) R('#2b4a66', i, 6, 1, 2); R('#e6eef5', 4, 9, 7, 1); }
+      if (id === 'fish_tuna') { R('#c4ced6', 3, 9, 9, 2); R('#ffd34d', 11, 6, 1, 1); R('#ffd34d', 11, 10, 1, 1); R(c, 1, 7, 2, 3); }
       return;
     }
     switch (id) {
@@ -1444,6 +1468,8 @@
       case 'bone': R('#f2ede4', 3, 7, 10, 2); R('#f2ede4', 1, 5, 3, 3); R('#f2ede4', 1, 8, 3, 3); R('#f2ede4', 12, 5, 3, 3); R('#f2ede4', 12, 8, 3, 3); R('#d9d0bf', 4, 8, 8, 1); break;
       case 'ecto': R('#c9f2ff', 4, 3, 8, 9); R('#c9f2ff', 3, 6, 10, 6); R('#ffffff', 5, 5, 2, 2); R('#2b2233', 6, 7, 1, 1); R('#2b2233', 9, 7, 1, 1); R('#9fdcf7', 3, 12, 2, 2); R('#9fdcf7', 7, 12, 2, 2); R('#9fdcf7', 11, 12, 2, 2); break;
       case 'fire_core': R('#ff7a1a', 4, 4, 8, 8); R('#ffb02e', 5, 5, 6, 6); R('#ffe066', 6, 6, 4, 4); R('#ff7a1a', 7, 2, 2, 2); R('#ff7a1a', 7, 12, 2, 2); R('#ff7a1a', 2, 7, 2, 2); R('#ff7a1a', 12, 7, 2, 2); break;
+      case 'ice_crystal': R('#bfefff', 6, 1, 4, 14); R('#bfefff', 3, 5, 10, 6); R('#ffffff', 7, 2, 1, 6); R('#8fd3ff', 9, 7, 2, 6); R('#e8fbff', 4, 6, 2, 1); break;
+      case 'abyss_shard': R('#4a3b5c', 5, 2, 6, 12); R('#6c3fb5', 4, 5, 8, 6); R('#b48cff', 6, 4, 2, 6); R('#ffe066', 9, 8, 1, 1); R('#2b2233', 5, 13, 6, 1); break;
       case 'dragon_scale': R('#c0392b', 3, 3, 10, 10); R('#e74c3c', 4, 4, 8, 4); R('#8a2e1a', 3, 8, 10, 1); R('#8a2e1a', 7, 3, 1, 10); R('#ffd34d', 5, 5, 1, 1); break;
       case 'duck_egg': R('#dff1f6', 5, 3, 6, 10); R('#dff1f6', 4, 5, 8, 7); R('#c3dfe8', 5, 11, 6, 2); R('#ffffff', 6, 5, 2, 2); R('#9fc7d4', 9, 7, 1, 1); break;
       case 'goat_milk': R('#c9a96b', 6, 1, 4, 2); R('#fff7ec', 4, 3, 8, 11); R('#e8d9c6', 4, 8, 8, 2); R('#e6dfd1', 4, 13, 8, 1); break;
@@ -1815,6 +1841,44 @@
         R('#8a2e1a', -6, -20 + b + (f ? 2 : 0), 8, 6); R('#a93226', -5, -19 + b + (f ? 2 : 0), 6, 4);
         R('#c0392b', -13, -8 + b, 4, 3); R('#c0392b', -15, -10 + b, 3, 3);
         R('#8a2e1a', -7, -3, 3, 3); R('#8a2e1a', 2, -3, 3, 3);
+        break;
+      // ── v8 4성 · 5성
+      case 'yeti':
+        R('#f4f8fb', -6, -16 + b, 12, 15); R('#ffffff', -5, -16 + b, 6, 3); R('#d6e4ec', -6, -2, 12, 1);
+        R('#f4f8fb', -9, -13 + b, 3, 8); R('#f4f8fb', 6, -13 + b, 3, 8); R('#9ab3c4', -4, -13 + b, 8, 5);
+        R('#2b2233', -3, -12 + b, 2, 2); R('#2b2233', 1, -12 + b, 2, 2); R('#e85d5d', -1, -9 + b, 3, 1); R('#ffffff', -1, -8 + b, 1, 1); R('#ffffff', 1, -8 + b, 1, 1);
+        R('#d6e4ec', -5, -1, 4, 1); R('#d6e4ec', 1, -1, 4, 1);
+        break;
+      case 'ice_wisp': {
+        const c = f ? 'rgba(191,239,255,0.9)' : 'rgba(143,211,255,0.9)';
+        R(c, -4, -17 + b, 8, 9); R(c, -3, -19 + b, 6, 2); R(c, -2, -8 + b, 4, 3); R(c, -1, -5 + b, 2, 2);
+        R('#ffffff', -2, -15 + b, 1, 2); R('#ffffff', 1, -15 + b, 1, 2); R('#e8fbff', -6, -14 + b + (f ? 1 : 0), 2, 1); R('#e8fbff', 5, -12 + b - (f ? 1 : 0), 2, 1);
+        break;
+      }
+      case 'frost_queen':
+        R('#8fd3ff', -6, -10 + b, 12, 10); R('#bfefff', -5, -10 + b, 3, 9); R('#6aa6d1', -7, -1, 14, 1);
+        R('#ffe0c2', -3, -16 + b, 6, 6); R('#e8fbff', -4, -17 + b, 8, 2); R('#e8fbff', -5, -15 + b, 2, 6); R('#e8fbff', 3, -15 + b, 2, 6);
+        R('#2b6a9a', -2, -14 + b, 1, 1); R('#2b6a9a', 1, -14 + b, 1, 1);
+        R('#bfefff', -4, -21 + b, 1, 4); R('#bfefff', -1, -23 + b, 2, 6); R('#bfefff', 3, -21 + b, 1, 4); R('#ffffff', -1, -22 + b, 1, 1);
+        R('#e8fbff', 7, -18 + b, 1, 16); R('#bfefff', 6, -20 + b, 3, 3);
+        break;
+      case 'demon_knight':
+        R('#2b2233', -1, -6, 1, 5); R('#2b2233', 1, -6, 1, 5);
+        R('#4a3a63', -4, -13 + b, 8, 8); R('#6c3fb5', -3, -12 + b, 6, 2); R('#2b2233', -5, -12 + b, 1, 5); R('#2b2233', 4, -12 + b, 1, 5);
+        R('#4a3a63', -3, -19 + b, 6, 6); R('#ff5c5c', -2, -17 + b, 1, 1); R('#ff5c5c', 1, -17 + b, 1, 1); R('#2b2233', -4, -21 + b, 1, 3); R('#2b2233', 3, -21 + b, 1, 3);
+        R('#b48cff', 5, -19 + b, 2, 12); R('#e6d9ff', 5, -19 + b, 1, 1);
+        break;
+      case 'shade':
+        R('rgba(43,34,51,0.85)', -5, -17 + b, 10, 13); R('rgba(43,34,51,0.85)', -4, -19 + b, 8, 2);
+        for (let i = 0; i < 3; i++) R('rgba(43,34,51,0.85)', -5 + i * 4, -4 + b + ((i + f) % 2), 2, 2);
+        R('#b48cff', -3, -14 + b, 2, 2); R('#b48cff', 1, -14 + b, 2, 2); R('#e6d9ff', -1, -10 + b, 2, 1);
+        break;
+      case 'abyss_lord':
+        R('#2e2440', -9, -14 + b, 18, 13); R('#4a3a63', -8, -14 + b, 16, 3); R('#17101f', -9, -1, 18, 1);
+        R('#4a3a63', -5, -22 + b, 10, 8); R('#ff5c5c', -3, -19 + b, 2, 2); R('#ff5c5c', 1, -19 + b, 2, 2); R('#17101f', -2, -16 + b, 4, 1);
+        R('#ffe066', -6, -26 + b, 2, 5); R('#ffe066', 4, -26 + b, 2, 5); R('#ffe066', -1, -27 + b, 2, 4);
+        R('#6c3fb5', -14, -16 + b + (f ? 2 : 0), 5, 10); R('#6c3fb5', 9, -16 + b + (f ? 2 : 0), 5, 10); R('#b48cff', -13, -15 + b, 1, 7); R('#b48cff', 12, -15 + b, 1, 7);
+        R('#8a5cd6', -3, -10 + b, 6, 4); R('#e6d9ff', -1, -9 + b, 2, 2);
         break;
     }
     g.restore();
