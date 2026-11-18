@@ -272,12 +272,12 @@
     #joyKnob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%;
       background: rgba(255, 143, 171, .9); border: 3px solid var(--ink); pointer-events: none; }
     #tbtns { position: fixed; right: max(10px, env(safe-area-inset-right)); bottom: 74px; display: grid; grid-template-columns: repeat(3, 54px);
-      grid-template-areas: ". chat r" ". x e" ". use use"; gap: 8px; z-index: 15; }
+      grid-template-areas: "g chat r" ". x e" ". use use"; gap: 8px; z-index: 15; }
     .tbtn { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--ink); background: rgba(255, 247, 236, .94); font: 15px var(--font);
       box-shadow: 2px 2px 0 var(--ink); touch-action: manipulation; position: relative; display: grid; place-items: center; line-height: 1; padding: 0; }
     .tbtn small { display: block; font-size: 8px; opacity: .7; margin-top: -10px; }
     .tbtn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); background: #ffe3ea; }
-    #bChat { grid-area: chat; } #bR { grid-area: r; } #bX { grid-area: x; } #bE { grid-area: e; }
+    #bG { grid-area: g; } #bChat { grid-area: chat; } #bR { grid-area: r; } #bX { grid-area: x; } #bE { grid-area: e; }
     #bUse { grid-area: use; width: 116px; border-radius: 28px; background: var(--pink); color: #fff; font-size: 17px; text-shadow: 1px 1px 0 var(--ink); }
     body.touch #chat { display: none; }
     body.touch.chatOpen #chat { display: flex; top: 54px; bottom: auto; left: 6px; width: min(420px, calc(100vw - 12px)); z-index: 16; }
@@ -358,6 +358,7 @@
   <div id="touch">
     <div id="joy"><div id="joyKnob"></div></div>
     <div id="tbtns">
+      <button class="tbtn" id="bG">💃<small>춤</small></button>
       <button class="tbtn" id="bChat">💬<span id="bChatN" class="badge"></span></button>
       <button class="tbtn" id="bR">R<small>돌리기</small></button>
       <button class="tbtn" id="bX">X<small>부수기</small></button>
@@ -402,8 +403,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="shared.js?v=12"></script>
-  <script src="draw.js?v=12"></script>
-  <script src="client.js?v=12"></script>
+  <script src="shared.js?v=13"></script>
+  <script src="draw.js?v=13"></script>
+  <script src="client.js?v=13"></script>
 </body>
 </html>

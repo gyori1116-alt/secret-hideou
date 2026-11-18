@@ -1562,19 +1562,20 @@
   const NPCS = {
     mayor: { name: '모모 촌장', x: 79, y: 58, av: { skin: 1, hs: 0, hc: 6, eyes: 1, top: 'suit', tc: 11, bc: 8, acc: 'glasses' },
       lines: ['허허, 알PDF 마을은 오늘도 평화롭구먼.', '마을 사람들 부탁을 들어주면 다들 좋아할 걸세.', '위쪽 [🗺️ 이동] 버튼으로 여러 장소에 갈 수 있다네.'] },
-    farmer: { name: '감자 할아버지', x: 88, y: 70, av: { skin: 2, hs: 0, hc: 6, eyes: 3, top: 'overalls', tc: 2, bc: 10, acc: 'strawhat' },
+    // 일하는 곳에 살아요: 🌾 농장 · 🐄 목장 · 🎣 낚시터 · ⛏ 광산 · 🌲 숲 · ⚔️ 던전 입구 (나머지는 마을)
+    farmer: { name: '감자 할아버지', x: 39, y: FY + 3, av: { skin: 2, hs: 0, hc: 6, eyes: 3, top: 'overalls', tc: 2, bc: 10, acc: 'strawhat' },
       lines: ['흙 냄새가 참 좋지 않은가?', '🌾 농장에 가면 넓은 밭이 있단다.', '물 주는 걸 잊지 말게나.'] },
-    rancher: { name: '목장주 메이', x: 98, y: 70, av: { skin: 0, hs: 6, hc: 2, eyes: 1, top: 'shirt', tc: 3, bc: 4, acc: 'cap' },
+    rancher: { name: '목장주 메이', x: 112, y: FY + 3, av: { skin: 0, hs: 6, hc: 2, eyes: 1, top: 'shirt', tc: 3, bc: 4, acc: 'cap' },
       lines: ['우리 목장 동물들 너무 귀엽죠?', '동물에게 작물을 주면 선물을 줘요!', '🐄 목장에 놀러 와요~'] },
-    fisher: { name: '어부 바다', x: 64, y: 69, av: { skin: 2, hs: 5, hc: 1, eyes: 0, top: 'raincoat', tc: 2, bc: 11, acc: 'fishhat' },
+    fisher: { name: '어부 바다', x: 25, y: CY + 6, av: { skin: 2, hs: 5, hc: 1, eyes: 0, top: 'raincoat', tc: 2, bc: 11, acc: 'fishhat' },
       lines: ['오늘은 물때가 좋아!', '🎣 낚시터에선 참치도 잡힌다구.', '찌에 ❗가 뜨면 바로 당겨!'] },
-    miner: { name: '광부 철수', x: 62, y: 62, av: { skin: 3, hs: 0, hc: 1, eyes: 0, top: 'jersey', tc: 10, bc: 8, acc: 'cap' },
+    miner: { name: '광부 철수', x: 79, y: CY + 6, av: { skin: 3, hs: 0, hc: 1, eyes: 0, top: 'jersey', tc: 10, bc: 8, acc: 'cap' },
       lines: ['광산은 어두우니 횃불을 챙겨.', '깊이 들어갈수록 금이랑 수정이 나와.', '곡괭이는 없어도 돼, X로 캐면 되니까!'] },
-    woodcutter: { name: '나무꾼 숲지기', x: 91, y: 60, av: { skin: 2, hs: 7, hc: 2, eyes: 0, top: 'stripe', tc: 9, bc: 10, acc: 'beanie' },
+    woodcutter: { name: '나무꾼 숲지기', x: 123, y: CY + 6, av: { skin: 2, hs: 7, hc: 2, eyes: 0, top: 'stripe', tc: 9, bc: 10, acc: 'beanie' },
       lines: ['나무는 🌲 숲에서만 다시 자라.', '숲속 모닥불에서 요리도 할 수 있지.', '사슴은 겁이 많아서 금방 도망가.'] },
     chef: { name: '요리사 쿡', x: 85, y: 59, av: { skin: 0, hs: 3, hc: 0, eyes: 2, top: 'chefcoat', tc: 7, bc: 8, acc: 'chef' },
       lines: ['요리는 사랑이에요! 💕', '가스레인지나 모닥불 앞에서 E를 눌러 봐요.', '요리를 먹으면 잠깐 빨라져요.'] },
-    knight: { name: '기사단장 레온', x: 70, y: 69, av: { skin: 1, hs: 5, hc: 3, eyes: 0, top: 'armor', tc: 11, bc: 11, acc: 'none' },
+    knight: { name: '기사단장 레온', x: 52, y: TY - 4, av: { skin: 1, hs: 5, hc: 3, eyes: 0, top: 'armor', tc: 11, bc: 11, acc: 'none' },
       lines: ['강해지고 싶은가?', '던전 몬스터는 공격 전에 ❗를 띄운다. 피하라!', '보스는 혼자보다 여럿이 상대하는 게 좋다.'] },
     librarian: { name: '사서 루나', x: 86, y: 77, av: { skin: 0, hs: 1, hc: 5, eyes: 3, top: 'dress', tc: 5, bc: 5, acc: 'witch' },
       lines: ['쉿, 책 읽는 중이에요...', '이 마을엔 오래된 전설이 있어요.', '별은 밤하늘에만 있는 게 아니랍니다.'] },
@@ -1595,6 +1596,17 @@
   function placeStoryNPCs(ground, objects) {
     const have = new Set(Object.values(objects).filter((o) => o && o.t === 'npc').map((o) => o.id));
     for (const [id, n] of Object.entries(NPCS)) if (!have.has(id)) placeNear(ground, objects, n.x, n.y, { t: 'npc', id, fixed: 1 });
+  }
+  // 저장된 지도에서 엉뚱한 장소에 있는 마을 사람을 제자리(일하는 곳)로 옮겨요. 옮겼으면 true
+  function relocateNPCs(ground, objects) {
+    let moved = false;
+    for (const [k, o] of Object.entries(objects)) {
+      if (!o || o.t !== 'npc' || !NPCS[o.id]) continue;
+      const [x, y] = k.split(',').map(Number), n = NPCS[o.id];
+      if (placeAt(x, y) !== placeAt(n.x, n.y)) { delete objects[k]; moved = true; }
+    }
+    if (moved) placeStoryNPCs(ground, objects);
+    return moved;
   }
 
   // ───────── 📖 스토리 퀘스트 「부서진 수호별」 ─────────
@@ -1929,7 +1941,7 @@
     PQ_TEMPLATES, PQ_SLOTS, PQ_NAMES, periods, makePQ, COLLECTIONS, COL_INDEX, colName,
     SKINS, HAIR_STYLES, HAIR_COLORS, EYES, TOPS, CLOTH, ACCESSORIES, BACKS, COSMETICS, COSMETIC_SRC, isLocked, FREE_ACC,
     defaultAvatar, sanitizeAvatar, INV_SIZE, CHEST_SIZE, starterInventory, countItem, addItem, removeItem, canTrade, canFit, PRICE_MULT, generateWorld, expandWorld,
-    H7, FY, PLACES, PLACE_ORDER, placeAt, toV8, placeNear, NPCS, npcAvatar, placeStoryNPCs, STORY, STORY_BY, storyAvail, storyProg, storyReady, storyBaseStat, npcMark,
+    H7, FY, PLACES, PLACE_ORDER, placeAt, toV8, placeNear, NPCS, npcAvatar, placeStoryNPCs, relocateNPCs, STORY, STORY_BY, storyAvail, storyProg, storyReady, storyBaseStat, npcMark,
     MINIGAMES, MG_PAY_MAX, mgPay, mgRand,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = SHARED;

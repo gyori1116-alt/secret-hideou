@@ -1627,8 +1627,21 @@
     // 팔
     const sleeve = ['hoodie', 'suit', 'armor', 'chefcoat', 'hanbok', 'pajama', 'jersey', 'raincoat'].includes(top);
     const arm = sleeve ? (top === 'armor' ? '#b8c2ca' : top === 'chefcoat' ? '#ffffff' : top === 'raincoat' ? '#ffd34d' : tc) : skin;
-    R(arm, -6, -9 + b, 1, 4); R(arm, 5, -9 + b, 1, 4);
-    if (sleeve) { R(skin, -6, -6 + b, 1, 1); R(skin, 5, -6 + b, 1, 1); }
+    // opt.arms (춤): 'up' 두 팔 위 · 'l'/'r' 한 팔 위 · 'out' 양옆으로
+    const am = opt.arms || '';
+    const A = (ax, mode) => {
+      const s = ax < 0 ? -1 : 1;
+      // 위로 든 팔은 긴 머리에 안 가리게 바깥쪽으로 비스듬히
+      if (mode === 'up') {
+        const ox = ax + s * 2;
+        R(arm, ax + s, -12 + b, 1, 3); R(arm, ox, -17 + b, 1, 6); R(shade(arm, -0.3), ox + s, -16 + b, 1, 5);
+        R(skin, s < 0 ? ox - 1 : ox, -19 + b, 2, 2); R(shade(skin, -0.25), s < 0 ? ox - 1 : ox + 1, -18 + b, 1, 1);
+      }
+      else if (mode === 'out') { R(arm, s < 0 ? ax - 2 : ax, -9 + b, 3, 1); R(skin, s < 0 ? ax - 3 : ax + 3, -9 + b, 1, 1); }
+      else { R(arm, ax, -9 + b, 1, 4); if (sleeve) R(skin, ax, -6 + b, 1, 1); }
+    };
+    A(-6, am === 'up' || am === 'l' ? 'up' : am === 'out' ? 'out' : '');
+    A(5, am === 'up' || am === 'r' ? 'up' : am === 'out' ? 'out' : '');
     const chestArmor = AC('chest');
     if (chestArmor) {
       R(chestArmor, -5, -10 + b, 10, 6); R(shade(chestArmor, 0.35), -4, -10 + b, 3, 1); R(shade(chestArmor, -0.3), -5, -5 + b, 10, 1);

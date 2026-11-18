@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const express = require('express');
+const compression = require('compression');
 const { Server } = require('socket.io');
 const S = require('./public/shared.js');
 
@@ -120,10 +121,12 @@ const ownerOnline = (a) => (a.owner ? Object.values(players).find((q) => q.key =
 
 // ───────── 서버 ─────────
 const app = express();
+app.use(compression());   // 📉 게임 파일(js·html)을 압축해서 보내요 → 접속할 때 트래픽 약 1/4
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (_req, res) => res.send('ok'));
 const server = http.createServer(app);
-const io = new Server(server);
+// 📉 1KB 넘는 소켓 메시지(처음 접속할 때 맵, 동물 목록 등)는 압축해서 보내요
+const io = new Server(server, { perMessageDeflate: { threshold: 1024 } });
 const ROOM = 'hideout';
 
 const players = {};     // socket.id -> { id, name, key, x, y, dir, moving, avatar, fishing, prof, socket, sel, held, pose, trade }
@@ -143,7 +146,7 @@ const eqOf = (pr) => { const e = {}; for (const [part, it] of Object.entries(pr.
 const isMvp = (k) => !!(board.lastMvp && Object.values(board.lastMvp.cats || {}).some((list) => list[0] && list[0].name.toLowerCase() === k));
 const pub = (p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, held: p.held, pose: p.pose,
   lv: lvOf(p.prof), mvp: isMvp(p.key), job: p.prof.job, title: titleName(p.prof), eq: eqOf(p.prof), hp: p.hp, maxHp: maxOf(p),
-  fishing: p.fishing ? { x: p.fishing.x, y: p.fishing.y } : null });
+  fishing: p.fishing ? { x: p.fishing.x, y: p.fishing.y } : null, dance: p.dance || 0 });
 
 function pushChat(msg) {
   chatLog.push(msg);
@@ -338,7 +341,15 @@ function occupied(x, y) {
   return Object.values(players).some((p) =>
     p.x + 4 > x * TILE && p.x - 4 < (x + 1) * TILE && p.y > y * TILE && p.y - 3 < (y + 1) * TILE);
 }
+// 💃 춤 (0 = 안 춤, 1~3 = 춤 종류)
+function setDance(p, k) {
+  k = [1, 2, 3].includes(k) ? k : 0;
+  if ((p.dance || 0) === k) return;
+  p.dance = k;
+  io.to(ROOM).emit('dance', { id: p.id, k });
+}
 function setPose(p, pose) {
+  if (pose) setDance(p, 0);
   p.pose = pose;
   if (pose) { p.x = pose.x * TILE + 8; p.y = pose.y * TILE + (pose.k === 'lie' ? 12 : 13); p.moving = false; }
   io.to(ROOM).emit('pose', { id: p.id, pose, x: p.x, y: p.y });
@@ -1331,6 +1342,7 @@ io.on('connection', (socket) => {
     if (!p || !isNum(d.x) || !isNum(d.y)) return;
     if (p.pose && d.moving) setPose(p, null);
     if (p.pose) return;
+    if (d.moving && p.dance) setDance(p, 0);
     const nx = clamp(d.x, 0, W * TILE), ny = clamp(d.y, 0, H * TILE);
     // 🗺️ 다른 장소로는 걸어서 못 가요 ([이동] 버튼으로만). 순간이동 직후에 늦게 온 예전 위치도 이렇게 걸러져요
     const toPl = S.placeAt(Math.floor(nx / TILE), Math.floor((ny - 4) / TILE));
@@ -1344,6 +1356,12 @@ io.on('connection', (socket) => {
     if (DIRS.has(d.dir)) p.dir = d.dir;
     p.moving = !!d.moving;
     stateDirty = true;
+  });
+
+  socket.on('dance', (k) => {
+    const p = me();
+    if (!p || (k && (p.pose || p.fishing))) return;
+    setDance(p, k);
   });
 
   socket.on('sel', ({ slot } = {}) => {
@@ -1702,7 +1720,8 @@ io.on('connection', (socket) => {
     if (!rod) return;
     if (!p.prof.inv.some((s) => !s)) return toast(socket, '🎒 가방이 꽉 차서 물고기를 넣을 칸이 없어요! 한 칸 비워주세요');
     if (p.pose) setPose(p, null);
-    const biteIn = rod.gold ? 700 + rand() * 2300 : 1500 + rand() * 4500;
+    setDance(p, 0);
+    const biteIn =rod.gold ? 700 + rand() * 2300 : 1500 + rand() * 4500;
     const f = p.fishing = { x, y, biteAt: Date.now() + biteIn, timer: null, gold: !!rod.gold, zone: S.zoneAt(x, y) };
     io.to(ROOM).emit('playerFx', { id: p.id, fishing: { x, y } });
     f.timer = setTimeout(() => {
@@ -2042,11 +2061,23 @@ setInterval(() => {
     } else { a.moving = false; a.stuck = 0; }
     if (wasMoving !== a.moving) animalsDirty = true;
   }
-  if (animalsDirty) {
-    animalsDirty = false;
-    io.to(ROOM).volatile.emit('animals', [...animals.values()].map(pubAnimal));
+  // 📉 동물 위치는 0.2초마다, 같은 장소에 있는 사람에게만 보내요 (트래픽 줄이기)
+  //    움직임이 없어도 1초마다 한 번은 보내서, 장소를 옮긴 사람이나 빠진 패킷을 맞춰요
+  if ((animalsDirty && now - lastAnimalSync >= 200) || now - lastAnimalSync >= 1000) {
+    animalsDirty = false; lastAnimalSync = now;
+    const byPlace = new Map();
+    const listFor = (pl) => {
+      if (!byPlace.has(pl)) {
+        const all = [...animals.values()];
+        const arr = pl ? all.filter((a) => S.placeAt(Math.floor(a.x / TILE), Math.floor((a.y - 4) / TILE)) === pl) : all;
+        byPlace.set(pl, arr.map(pubAnimal));
+      }
+      return byPlace.get(pl);
+    };
+    for (const p of plist) p.socket.volatile.emit('animals', listFor(placeOf(p)));
   }
 }, 100);
+let lastAnimalSync = 0;
 
 // ⚔️ 몬스터 움직임·공격 (초당 10번)
 setInterval(() => {
@@ -2170,14 +2201,25 @@ function saveProfileNow(k) {
   saveProfile(k).then(() => keysDirty && saveData('profile_keys', [...knownKeys]).then(() => { keysDirty = false; }))
     .catch((e) => console.error('프로필 저장 실패:', k, e.message));
 }
-async function saveAll() {
-  if (saving) return saving;
+// 📉 맵은 크고(수백 KB) 작물만 자라도 바뀌어서, 15초마다 올리면 트래픽이 많이 나가요.
+//    맵은 3분마다, 프로필은 1분마다 저장하고, 서버가 꺼질 때는 전부 바로 저장해요.
+//    (나갈 때·강화할 때는 지금처럼 그 사람 프로필을 바로 저장해요)
+const WORLD_SAVE_MS = 3 * 60 * 1000, PROFILE_SAVE_MS = 60 * 1000;
+let lastWorldSave = Date.now(), lastProfileSave = Date.now();
+async function saveAll(force = false) {
+  if (saving) { await saving.catch(() => {}); if (!force) return; }
   saving = (async () => {
+    const now = Date.now();
     // 하나가 실패해도 나머지는 저장해요
-    try { if (worldDirty) { worldDirty = false; await saveData('world', serializeWorld()); } } catch (e) { worldDirty = true; console.error('맵 저장 실패:', e.message); }
-    for (const p of Object.values(players)) { p.prof.x = p.x; p.prof.y = p.y; }
-    for (const k of Object.keys(profiles)) {
-      try { await saveProfile(k); } catch (e) { console.error('프로필 저장 실패:', k, e.message); }
+    try {
+      if (worldDirty && (force || now - lastWorldSave >= WORLD_SAVE_MS)) { worldDirty = false; lastWorldSave = now; await saveData('world', serializeWorld()); }
+    } catch (e) { worldDirty = true; console.error('맵 저장 실패:', e.message); }
+    if (force || now - lastProfileSave >= PROFILE_SAVE_MS) {
+      lastProfileSave = now;
+      for (const p of Object.values(players)) { p.prof.x = p.x; p.prof.y = p.y; }
+      for (const k of Object.keys(profiles)) {
+        try { await saveProfile(k); } catch (e) { console.error('프로필 저장 실패:', k, e.message); }
+      }
     }
     try { if (keysDirty) { keysDirty = false; await saveData('profile_keys', [...knownKeys]); } } catch (e) { keysDirty = true; console.error('프로필 목록 저장 실패:', e.message); }
     try { if (boardDirty) { boardDirty = false; await saveData('board', board); } } catch (e) { boardDirty = true; console.error('게시판 저장 실패:', e.message); }
@@ -2188,7 +2230,7 @@ async function saveAll() {
 setInterval(saveAll, 15000);
 
 async function shutdown() {
-  await saveAll();
+  await saveAll(true);
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
@@ -2382,6 +2424,15 @@ function upgradeWorldV4(saved) {
     console.log('🗺️  v7 지도로 넓혔어요: 위쪽 던전 지대 + 왼쪽 새 땅 (지은 건물은 그대로 옮겼어요)');
   }
   if (needV8) upgradeWorldV8();
+  {
+    // 🧑‍🌾 마을 사람을 일하는 곳(광산·숲·낚시터·농장·목장·던전 입구)으로 (한 번만, 이미 제자리면 그대로)
+    const objs = Object.fromEntries(world.objects);
+    if (S.relocateNPCs(world.ground, objs)) {
+      world.objects = new Map(Object.entries(objs));
+      worldDirty = true;
+      console.log('🧑‍🌾 마을 사람들을 일하는 곳으로 옮겼어요');
+    }
+  }
   indexNpcs();
   initMobSlots();
   if (Object.keys(profiles).length && !(await loadData('profiles_backup_v5'))) {

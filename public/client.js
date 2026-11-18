@@ -290,7 +290,7 @@
   function addPlayer(p) {
     players[p.id] = Object.assign(players[p.id] || {}, {
       name: p.name, x: p.x, y: p.y, dx: p.x, dy: p.y, dir: p.dir, moving: p.moving, avatar: p.avatar, fishing: p.fishing, held: p.held, pose: p.pose,
-      lv: p.lv || 1, mvp: !!p.mvp, job: p.job, title: p.title, eq: p.eq || {}, hp: p.hp, maxHp: p.maxHp,
+      lv: p.lv || 1, mvp: !!p.mvp, job: p.job, title: p.title, eq: p.eq || {}, hp: p.hp, maxHp: p.maxHp, dance: p.dance || 0, danceT: performance.now(),
     });
     updateWho();
   }
@@ -437,6 +437,10 @@
     p.pose = pose;
     if (pose) { p.x = p.dx = x; p.y = p.dy = y; }
     if (id === myId) { me.pose = pose; if (pose) { me.x = x; me.y = y; me.dir = 'down'; } }
+  });
+  socket.on('dance', ({ id, k }) => {
+    const p = players[id];
+    if (p && p.dance !== (k || 0)) { p.dance = k || 0; p.danceT = performance.now(); }
   });
   socket.on('playerFx', ({ id, fishing: f }) => {
     if (players[id]) players[id].fishing = f;
@@ -631,6 +635,17 @@
     socket.emit('act', { type: 'use', slot: sel, x: target.x, y: target.y, r: def.obj && S.canRotate(def.obj) ? placeRot : 0 });
   }
   // R: 가구를 들고 있으면 놓을 방향 돌리기, 아니면 바라보는 가구 돌리기
+  // 💃 춤: 누를 때마다 1 → 2 → 3 → 멈춤
+  const DANCES = ['', '🎉 신나는 점프', '🌀 빙글빙글', '🎵 흔들흔들'];
+  function doDance() {
+    const p = players[myId];
+    if (!p) return;
+    if (me.pose || fishing) { showToast('앉아 있거나 낚시 중엔 춤출 수 없어요'); return; }
+    const k = ((p.dance || 0) + 1) % 4;
+    socket.emit('dance', k);
+    p.dance = k; p.danceT = performance.now(); // 내 화면은 바로 바꿔요
+    showToast(k ? '💃 ' + DANCES[k] : '춤 멈춤');
+  }
   function doRotate() {
     if (!my) return;
     const it = my.inv[sel], def = it && S.ITEMS[it.id];
@@ -690,6 +705,7 @@
     if (/^Digit[1-9]$/.test(e.code)) { selectSlot(+e.code.slice(5) - 1); return; }
     if (MODAL_KEYS[e.code]) { openModal(MODAL_KEYS[e.code]); return; }
     if (e.code === 'KeyM') { $('mmWrap').classList.toggle('hidden'); return; }
+    if (e.code === 'KeyG') { if (!e.repeat) doDance(); return; }
     if (['Space', 'KeyE', 'KeyF', 'KeyX', 'KeyR'].includes(e.code)) target = computeTarget();
     if (e.code === 'KeyR') { if (!e.repeat) doRotate(); return; }
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) doUse(); return; }
@@ -738,6 +754,7 @@
     tap('bE', () => doInteract());
     tap('bX', () => doBreak());
     tap('bR', () => doRotate());
+    tap('bG', () => doDance());
     $('bChat').addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const open = document.body.classList.toggle('chatOpen');
@@ -1687,9 +1704,10 @@
       k('Q', '퀘스트 (일간·주간·월간·업적)'),
       k('K', '도감'),
       k('M', '미니맵 켜기/끄기 (미니맵을 누르면 크게)'),
+      k('G', '💃 춤추기 — 누를 때마다 신나는 점프 → 빙글빙글 → 흔들흔들 → 멈춤 (움직이면 멈춰요)'),
       k('Enter', '채팅'),
       k('Esc', '창 닫기 / 낚시 그만'),
-      k('📱 휴대폰', '왼쪽 아래 조이스틱 = 이동 · 화면 톡 = 그 칸 겨누기 · [사용]=Space · [E] · [X] · [R] · 💬 = 채팅')),
+      k('📱 휴대폰', '왼쪽 아래 조이스틱 = 이동 · 화면 톡 = 그 칸 겨누기 · [사용]=Space · [E] · [X] · [R] · 💃 = 춤 · 💬 = 채팅')),
       el('p', { style: 'font-size:12px;line-height:1.8;margin:14px 0 0' },
         '⚔️ 던전: 🗺️ 이동 → 던전. 1성(Lv.5)·2성(Lv.12)·3성(Lv.20)·4성(Lv.28)·5성(Lv.36) 문 앞에서 E. 무기를 들고 Space(사용)로 공격, 물약·요리로 체력 회복', el('br'),
         '🧭 전직: Lv.10부터 마을 전직 교관(E) → 기사·궁수·마법사·닌자 전직 퀘스트 / 🔨 대장간(모루) E → 무기 강화 / 🛡️ 갑옷은 🔨만들기 후 가방에서 장착', el('br'),
@@ -1723,6 +1741,7 @@
       me.moving = vx !== 0 || vy !== 0;
       if (me.moving) {
         me.pose = null;
+        if (players[myId] && players[myId].dance) players[myId].dance = 0; // 서버도 움직이면 춤을 멈춰요
         if (fishing) { socket.emit('fishCancel'); fishing = null; }
         if (joy.id !== null) {
           // 조이스틱: 기울인 만큼 속도, 더 많이 기울인 쪽을 바라봐요
@@ -1916,8 +1935,41 @@
       ctx.restore();
       return;
     }
+    if (p.dance && !p.pose && !p.moving) { drawDance(p, x, y, now); return; }
     const step = p.moving ? Math.floor(now / 140) % 2 : -1;
     D.drawChar(ctx, x, y, p.avatar || {}, p.pose ? S.ROT_DIRS[rot] : p.dir, p.pose ? -1 : step, { held: p.pose || p.fishing ? null : p.held, sit: !!p.pose, eq: p.eq });
+  }
+
+  // 💃 춤 3가지 (그림만 바꿔요, 다른 사람에게도 똑같이 보여요)
+  const SPIN = ['down', 'right', 'up', 'left'];
+  function drawDance(p, x, y, now) {
+    const t = now - (p.danceT || 0);
+    const opt = { eq: p.eq };
+    let dir = 'down', step = -1, hop = 0, rot = 0;
+    if (p.dance === 1) {        // 🎉 신나는 점프: 통통 뛰며 팔을 번갈아 번쩍
+      hop = -Math.round(Math.abs(Math.sin(t / 160)) * 4);
+      opt.arms = Math.floor(t / 320) % 2 ? 'l' : 'r';
+    } else if (p.dance === 2) { // 🌀 빙글빙글: 팔 벌리고 제자리 회전
+      dir = SPIN[Math.floor(t / 130) % 4];
+      hop = -Math.round(Math.abs(Math.sin(t / 260)) * 2);
+      opt.arms = 'out';
+    } else {                    // 🎵 흔들흔들: 두 팔 들고 좌우로 살랑
+      rot = Math.sin(t / 220) * 0.2;
+      step = Math.floor(t / 440) % 2;
+      opt.arms = 'up';
+    }
+    ctx.save();
+    ctx.translate(x, y + hop);
+    ctx.rotate(rot);
+    D.drawChar(ctx, 0, 0, p.avatar || {}, dir, step, opt);
+    ctx.restore();
+    // ♪ 음표가 머리 위로 둥실
+    const n = (t / 900) % 1;
+    ctx.globalAlpha = 1 - n;
+    ctx.fillStyle = '#ff5c8a';
+    ctx.font = '8px sans-serif';
+    ctx.fillText(Math.floor(t / 900) % 2 ? '♪' : '♫', x + 6 + Math.sin(t / 150) * 2, y - 26 - n * 8);
+    ctx.globalAlpha = 1;
   }
 
   // 🧑‍🌾 마을 사람: 가까이 가면 나를 쳐다봐요
